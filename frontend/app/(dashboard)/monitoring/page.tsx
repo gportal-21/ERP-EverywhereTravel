@@ -5,14 +5,20 @@ import { Activity, AlertOctagon, CheckCircle, XCircle } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+function authHeaders(): HeadersInit {
+  const token = typeof window !== "undefined" ? localStorage.getItem("et_token") : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export default function MonitoringPage() {
   const [health, setHealth] = useState<any>(null);
   const [circuits, setCircuits] = useState<any>(null);
 
   useEffect(() => {
     const load = () => {
-      fetch(`${API}/api/v1/monitoring/health`).then((r) => r.json()).then(setHealth).catch(() => {});
-      fetch(`${API}/api/v1/monitoring/circuit-breakers`).then((r) => r.json()).then(setCircuits).catch(() => {});
+      const headers = authHeaders();
+      fetch(`${API}/api/v1/monitoring/health`, { headers }).then((r) => r.json()).then(setHealth).catch(() => {});
+      fetch(`${API}/api/v1/monitoring/circuit-breakers`, { headers }).then((r) => r.json()).then(setCircuits).catch(() => {});
     };
     load();
     const t = setInterval(load, 10000);

@@ -110,16 +110,16 @@ class BaseConsumer:
     async def _on_message(
         self, message: aio_pika.abc.AbstractIncomingMessage
     ) -> None:
-        async with message.process(requeue=False):
-            try:
-                await self._process_message(message)
-            except Exception as e:
-                logger.error(
-                    f"[{self._agent_id}] Error procesando mensaje "
-                    f"{message.message_id}: {e}"
-                )
-                # Nack sin requeue → dead-letter exchange
-                await message.nack(requeue=False)
+        try:
+            await self._process_message(message)
+            await message.ack()
+        except Exception as e:
+            logger.error(
+                f"[{self._agent_id}] Error procesando mensaje "
+                f"{message.message_id}: {e}"
+            )
+            # Nack sin requeue → va a dead-letter exchange
+            await message.nack(requeue=False)
 
     async def _process_message(
         self, message: aio_pika.abc.AbstractIncomingMessage

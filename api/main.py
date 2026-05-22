@@ -17,11 +17,13 @@ from contextlib import asynccontextmanager
 
 import aio_pika
 import redis.asyncio as aioredis
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.config import settings
+from api.database import get_db
 from api.routes import auth, clients, packages, quotations, reservations, liquidations, sagas, documents, monitoring
 from core.event_bus.publisher import get_publisher
 from core.shared_state.redis_store import get_redis_store
@@ -136,25 +138,38 @@ async def websocket_endpoint(websocket: WebSocket, channel: str):
 
 
 @app.post("/api/v1/inquiries")
-async def submit_inquiry(inquiry: dict, request=None):
+async def submit_inquiry(inquiry: dict, db: AsyncSession = Depends(get_db)):
     """
     Punto de entrada principal: recibe una consulta de paquete turístico
     y la inyecta al sistema multiagente via RabbitMQ.
     """
     from core.mcp.envelope import MCPEnvelope
     from core.saga_coordinator import SagaCoordinator
+    from api.models import Saga
     import uuid
 
     redis_store = app.state.redis
     publisher = app.state.publisher
-    saga = SagaCoordinator(redis_store)
+    saga_coord = SagaCoordinator(redis_store)
 
-    # Crear saga
-    saga_id = await saga.start_saga(
+    # Crear saga en Redis (working memory)
+    saga_id = await saga_coord.start_saga(
         saga_type="PackageInquiry",
         initiated_by="api-gateway",
         context=inquiry,
     )
+
+    # Persistir saga en PostgreSQL (audit trail permanente)
+    db_saga = Saga(
+        id=saga_id,
+        saga_type="PackageInquiry",
+        status="RUNNING",
+        initiated_by="api-gateway",
+        context=inquiry,
+        steps=[],
+    )
+    db.add(db_saga)
+    await db.commit()
 
     envelope = MCPEnvelope(
         saga_id=saga_id,

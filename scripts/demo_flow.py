@@ -29,34 +29,42 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
+# Forzar UTF-8 en Windows para evitar UnicodeEncodeError con caracteres especiales
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
 try:
     from rich.console import Console
     from rich.panel import Panel
-    from rich.progress import Progress, SpinnerColumn, TextColumn
     from rich.table import Table
-    from rich import print as rprint
     RICH_AVAILABLE = True
 except ImportError:
     RICH_AVAILABLE = False
 
 BASE_URL = "http://localhost:8000"
-console = Console() if RICH_AVAILABLE else None
+# force_terminal=False en Windows para evitar el renderer legacy que falla con Unicode
+console = Console(force_terminal=True, highlight=False) if RICH_AVAILABLE else None
 
 
 def log(msg: str, style: str = "white") -> None:
     ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
     if RICH_AVAILABLE:
-        console.print(f"[dim]{ts}[/dim] {msg}", style=style)
+        try:
+            console.print(f"[dim]{ts}[/dim] {msg}", style=style)
+        except Exception:
+            print(f"[{ts}] {msg}")
     else:
         print(f"[{ts}] {msg}")
 
 
 def success(msg: str) -> None:
-    log(f"[green]✓[/green] {msg}" if RICH_AVAILABLE else f"[OK] {msg}")
+    log(f"[green]OK[/green] {msg}" if RICH_AVAILABLE else f"[OK]  {msg}")
 
 
 def error(msg: str) -> None:
-    log(f"[red]✗[/red] {msg}" if RICH_AVAILABLE else f"[ERR] {msg}")
+    log(f"[red]ERR[/red] {msg}" if RICH_AVAILABLE else f"[ERR] {msg}")
 
 
 def header(title: str) -> None:
@@ -98,12 +106,15 @@ class ETClient:
 
     def create_client(self) -> str:
         suffix = uuid.uuid4().hex[:6]
-        resp = self._client.post("/api/v1/clients", json={
+        resp = self._client.post("/api/v1/clients/", json={
             "full_name": f"Demo Cliente {suffix}",
             "email": f"demo_{suffix}@test.com",
             "phone": "999000000",
         })
-        return resp.json()["id"]
+        data = resp.json()
+        if "id" not in data:
+            raise KeyError(f"create_client fallo (status={resp.status_code}): {data}")
+        return data["id"]
 
     def submit_inquiry(self, client_id: str, destination: str = "Cusco", days_offset: int = 90) -> dict:
         start = (datetime.now() + timedelta(days=days_offset)).strftime("%Y-%m-%d")
@@ -130,7 +141,7 @@ class ETClient:
         return resp.json().get("packages", [])
 
     def create_reservation(self, client_id: str, quote_id: str, start_dt: str, end_dt: str) -> dict:
-        resp = self._client.post("/api/v1/reservations", json={
+        resp = self._client.post("/api/v1/reservations/", json={
             "reservation_code": f"ET-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:5].upper()}",
             "quote_id": quote_id,
             "client_id": client_id,
@@ -141,6 +152,8 @@ class ETClient:
             "version": 1,
             "created_by_agent": "demo-script",
         })
+        if resp.status_code != 200:
+            return {"error": f"HTTP {resp.status_code}", "detail": resp.text[:200]}
         return resp.json()
 
     def close(self) -> None:
@@ -227,7 +240,7 @@ def scenario_a_custom_package(client: ETClient) -> None:
         for step in steps:
             agent = step.get("agent", "?")
             status = step.get("status", "?")
-            icon = "[green]✓[/green]" if RICH_AVAILABLE and status == "COMPLETED" else ("✓" if status == "COMPLETED" else "✗")
+            icon = "[green]OK[/green]" if RICH_AVAILABLE and status == "COMPLETED" else ("OK" if status == "COMPLETED" else "--")
             log(f"    {icon} {step.get('step')} [{agent}]")
 
 
@@ -387,14 +400,19 @@ def main() -> None:
     args = parser.parse_args()
 
     if RICH_AVAILABLE:
-        console.print(Panel(
-            "[bold blue]Everywhere Travel — Sistema Multiagente[/bold blue]\n"
-            "[dim]Demo reproducible FASE 3 — UPAO Automatización Inteligente[/dim]",
-            expand=False,
-        ))
+        try:
+            console.print(Panel(
+                "[bold blue]Everywhere Travel - Sistema Multiagente[/bold blue]\n"
+                "[dim]Demo reproducible FASE 3 - UPAO Automatizacion Inteligente[/dim]",
+                expand=False,
+            ))
+        except Exception:
+            print("\n" + "="*60)
+            print("  Everywhere Travel - Sistema Multiagente Demo")
+            print("="*60)
     else:
         print("\n" + "="*60)
-        print("  Everywhere Travel — Sistema Multiagente Demo")
+        print("  Everywhere Travel - Sistema Multiagente Demo")
         print("="*60)
 
     client = ETClient(args.url)
@@ -433,13 +451,16 @@ def main() -> None:
     total_duration = time.perf_counter() - total_start
 
     if RICH_AVAILABLE:
-        console.print(Panel(
-            f"[green]Demo completado en {total_duration:.2f}s[/green]\n"
-            f"Escenarios ejecutados: {', '.join(scenarios_to_run)}",
-            expand=False,
-        ))
+        try:
+            console.print(Panel(
+                f"[green]Demo completado en {total_duration:.2f}s[/green]\n"
+                f"Escenarios ejecutados: {', '.join(scenarios_to_run)}",
+                expand=False,
+            ))
+        except Exception:
+            print(f"\n[COMPLETO] Demo en {total_duration:.2f}s - Escenarios: {', '.join(scenarios_to_run)}")
     else:
-        print(f"\n[COMPLETO] Demo en {total_duration:.2f}s — Escenarios: {', '.join(scenarios_to_run)}")
+        print(f"\n[COMPLETO] Demo en {total_duration:.2f}s - Escenarios: {', '.join(scenarios_to_run)}")
 
     client.close()
 

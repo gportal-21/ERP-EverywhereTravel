@@ -4,6 +4,11 @@ import { useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+function authHeaders(): Record<string, string> {
+  const token = typeof window !== "undefined" ? localStorage.getItem("et_token") : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export default function FinancePage() {
   const [code, setCode] = useState("");
   const [amount, setAmount] = useState("");
@@ -17,7 +22,7 @@ export default function FinancePage() {
     try {
       const r = await fetch(`${API}/api/v1/liquidations/${code.trim()}/transactions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ amount: parseFloat(amount), method, reference: `PAY-${Date.now()}` }),
       });
       setResult(await r.json());

@@ -4,6 +4,11 @@ import { useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+function authHeaders(): Record<string, string> {
+  const token = typeof window !== "undefined" ? localStorage.getItem("et_token") : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export default function QuotationsPage() {
   const [form, setForm] = useState({
     client_id: "", destination: "Cusco", start_date: "2026-09-01",
@@ -17,7 +22,7 @@ export default function QuotationsPage() {
     try {
       const r = await fetch(`${API}/api/v1/inquiries`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ ...form, budget_min: Number(form.budget_min), budget_max: Number(form.budget_max), traveler_count: Number(form.traveler_count) }),
       });
       setResult(await r.json());

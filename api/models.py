@@ -60,7 +60,11 @@ class Quotation(Base):
     margin_pct = Column(Numeric(5, 2), nullable=False)
     currency = Column(String(3), default="PEN")
     valid_until = Column(DateTime(timezone=True), nullable=False)
-    status = Column(String(20), default="DRAFT")
+    status = Column(
+        Enum("DRAFT", "VALIDATED", "REJECTED", "EXPIRED",
+             name="quotation_status", create_type=False),
+        default="DRAFT"
+    )
     customizations = Column(JSON, default={})
     created_by_agent = Column(String(100))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -76,7 +80,11 @@ class Reservation(Base):
     travel_start = Column(DateTime(timezone=True), nullable=False)
     travel_end = Column(DateTime(timezone=True), nullable=False)
     traveler_count = Column(Integer, default=1)
-    status = Column(String(20), default="PENDING_PAYMENT")
+    status = Column(
+        Enum("PENDING_PAYMENT", "CONFIRMED", "CANCELLED", "REFUNDED",
+             name="reservation_status", create_type=False),
+        default="PENDING_PAYMENT"
+    )
     version = Column(Integer, default=1)
     notes = Column(Text)
     created_by_agent = Column(String(100))
@@ -93,7 +101,11 @@ class Liquidation(Base):
     total_paid = Column(Numeric(12, 2), default=0)
     commission_amount = Column(Numeric(12, 2), default=0)
     commission_agent_id = Column(String(100))
-    status = Column(String(20), default="PARTIAL")
+    status = Column(
+        Enum("PARTIAL", "COMPLETE", "OVERDUE",
+             name="liquidation_status", create_type=False),
+        default="PARTIAL"
+    )
     payment_schedule = Column(JSON, default=[])
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -113,12 +125,24 @@ class Transaction(Base):
 class DocumentJob(Base):
     __tablename__ = "document_jobs"
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
-    document_type = Column(String(20), nullable=False)
+    document_type = Column(
+        Enum("VOUCHER", "INVOICE", "LIQUIDATION", "REPORT", "CONTRACT",
+             name="document_type", create_type=False),
+        nullable=False
+    )
     reference_id = Column(UUID(as_uuid=False))
     reference_type = Column(String(100))
     template_data = Column(JSON, nullable=False)
-    priority = Column(String(20), default="NORMAL")
-    status = Column(String(20), default="QUEUED")
+    priority = Column(
+        Enum("LOW", "NORMAL", "HIGH", "CRITICAL",
+             name="priority_level", create_type=False),
+        default="NORMAL"
+    )
+    status = Column(
+        Enum("QUEUED", "PROCESSING", "COMPLETE", "FAILED",
+             name="document_job_status", create_type=False),
+        default="QUEUED"
+    )
     retry_count = Column(Integer, default=0)
     error_message = Column(Text)
     requested_by_agent = Column(String(100))
@@ -132,7 +156,12 @@ class Saga(Base):
     __tablename__ = "sagas"
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
     saga_type = Column(String(100), nullable=False)
-    status = Column(String(30), default="RUNNING")
+    # create_type=False: el enum saga_status ya existe en PostgreSQL via init.sql
+    status = Column(
+        Enum("RUNNING", "COMPLETED", "COMPENSATING", "FAILED", "REQUIRES_MANUAL",
+             name="saga_status", create_type=False),
+        default="RUNNING"
+    )
     initiated_by = Column(String(100))
     context = Column(JSON, default={})
     steps = Column(JSON, default=[])

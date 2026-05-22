@@ -51,6 +51,7 @@ async def get_package(package_id: str, db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.get("")
 @router.get("/")
 async def list_packages(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Package).where(Package.is_active == True))

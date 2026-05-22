@@ -4,6 +4,11 @@ import { useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+function authHeaders(): HeadersInit {
+  const token = typeof window !== "undefined" ? localStorage.getItem("et_token") : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export default function ReservationsPage() {
   const [code, setCode] = useState("");
   const [result, setResult] = useState<any>(null);
@@ -13,7 +18,7 @@ export default function ReservationsPage() {
     if (!code.trim()) return;
     setLoading(true);
     try {
-      const r = await fetch(`${API}/api/v1/reservations/${code.trim()}`);
+      const r = await fetch(`${API}/api/v1/reservations/${code.trim()}`, { headers: authHeaders() });
       setResult(await r.json());
     } catch (e) { setResult({ detail: "Error de conexión" }); }
     setLoading(false);

@@ -6,6 +6,11 @@ import { Activity, CheckCircle, AlertTriangle, FileText, TrendingUp } from "luci
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const WS = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
 
+function authHeaders(): HeadersInit {
+  const token = typeof window !== "undefined" ? localStorage.getItem("et_token") : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 interface SystemHealth {
   agents: Record<string, string>;
   healthy_count: number;
@@ -26,10 +31,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const loadData = async () => {
+      const headers = authHeaders();
       try {
         const [healthData, sagasData] = await Promise.all([
-          fetch(`${API}/api/v1/monitoring/health`).then((r) => r.ok ? r.json() : null),
-          fetch(`${API}/api/v1/sagas?status=RUNNING`).then((r) => r.ok ? r.json() : { sagas: [] }),
+          fetch(`${API}/api/v1/monitoring/health`, { headers }).then((r) => r.ok ? r.json() : null),
+          fetch(`${API}/api/v1/sagas?status=RUNNING`, { headers }).then((r) => r.ok ? r.json() : { sagas: [] }),
         ]);
         if (healthData) setHealth(healthData);
         setSagas(sagasData?.sagas || []);
@@ -55,7 +61,7 @@ export default function DashboardPage() {
 
     const interval = setInterval(async () => {
       try {
-        const r = await fetch(`${API}/api/v1/monitoring/health`);
+        const r = await fetch(`${API}/api/v1/monitoring/health`, { headers: authHeaders() });
         if (r.ok) setHealth(await r.json());
       } catch (_) {}
     }, 15000);

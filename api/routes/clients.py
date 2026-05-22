@@ -34,6 +34,7 @@ async def get_client(client_id: str, db: AsyncSession = Depends(get_db)):
     return {"id": str(c.id), "full_name": c.full_name, "email": c.email, "preferences": c.preferences}
 
 
+@router.get("")
 @router.get("/")
 async def list_clients(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Client).limit(50))

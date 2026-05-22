@@ -21,7 +21,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: et_redis
-    command: redis-server --requirepass etredispass --appendonly yes
+    command: redis-server --requirepass etredispass --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:

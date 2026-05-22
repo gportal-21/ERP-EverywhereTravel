@@ -4,12 +4,17 @@ import { Package } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+function authHeaders(): HeadersInit {
+  const token = typeof window !== "undefined" ? localStorage.getItem("et_token") : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export default function PackagesPage() {
   const [packages, setPackages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${API}/api/v1/packages/`)
+    fetch(`${API}/api/v1/packages/`, { headers: authHeaders() })
       .then((r) => r.json())
       .then((d) => { setPackages(d.packages || []); setLoading(false); })
       .catch(() => setLoading(false));
