@@ -264,6 +264,28 @@ services:
       - .:/app
     command: python -m agents.notification.agent
 
+  itinerary_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: et_itinerary
+    environment:
+      DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
+      REDIS_URL: redis://:etredispass@redis:6379/0
+      RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: etminio
+      MINIO_SECRET_KEY: etminiopass
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      DB_API_URL: http://api:8000
+      AGENT_TYPE: itinerary
+    depends_on:
+      - orchestrator
+      - minio
+    volumes:
+      - .:/app
+    command: python -m agents.itinerary.agent
+
   # ─── Observabilidad ───────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:latest

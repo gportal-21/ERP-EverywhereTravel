@@ -2,8 +2,32 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Paquetes de sistema requeridos para compilar pycairo (dep de svglib→xhtml2pdf)
+# y otras extensiones C (reportlab, cryptography)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libcairo2-dev \
+        pkg-config \
+        ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+
+# 1. Base requirements (sin swarms para evitar deps pesadas como torch/transformers)
+RUN pip install --no-cache-dir "setuptools==69.5.1" && \
+    pip install --no-cache-dir -r requirements.txt
+
+# 2. Swarms + deps mínimas en capa separada (--no-deps evita torch/transformers)
+#    Si falla, swarms_compat.py activa el modo fallback automáticamente.
+RUN pip install --no-cache-dir --no-deps "swarms==6.8.7" && \
+    pip install --no-cache-dir \
+        "litellm>=1.0.0" \
+        "loguru>=0.7.0" \
+        "termcolor>=2.3.0" \
+        "tiktoken>=0.7.0" \
+        "langchain-core>=0.3.0" \
+        "langchain-community>=0.3.0" \
+    || echo "[WARN] swarms install parcial — modo fallback activo"
 
 COPY . .
 

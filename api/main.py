@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.config import settings
 from api.database import get_db
-from api.routes import auth, clients, packages, quotations, reservations, liquidations, sagas, documents, monitoring
+from api.routes import auth, clients, packages, quotations, reservations, liquidations, sagas, documents, monitoring, stats, itinerary
 from core.event_bus.publisher import get_publisher
 from core.shared_state.redis_store import get_redis_store
 
@@ -116,6 +116,8 @@ app.include_router(liquidations.router, prefix="/api/v1/liquidations",   tags=["
 app.include_router(sagas.router,        prefix="/api/v1/sagas",          tags=["sagas"])
 app.include_router(documents.router,    prefix="/api/v1/document-jobs",  tags=["documents"])
 app.include_router(monitoring.router,   prefix="/api/v1/monitoring",     tags=["monitoring"])
+app.include_router(stats.router,        prefix="/api/v1/stats",           tags=["stats"])
+app.include_router(itinerary.router,    prefix="/api/v1/itinerary",       tags=["itinerary"])
 
 
 @app.get("/health")

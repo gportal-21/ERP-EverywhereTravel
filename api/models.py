@@ -127,6 +127,7 @@ class DocumentJob(Base):
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
     document_type = Column(
         Enum("VOUCHER", "INVOICE", "LIQUIDATION", "REPORT", "CONTRACT",
+             "ITINERARY", "RECEIPT",
              name="document_type", create_type=False),
         nullable=False
     )

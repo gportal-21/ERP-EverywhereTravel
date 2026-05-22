@@ -8,6 +8,22 @@ from api.models import Saga
 router = APIRouter()
 
 
+@router.patch("/{saga_id}")
+async def update_saga(saga_id: str, data: dict, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Saga).where(Saga.id == saga_id))
+    saga = result.scalar_one_or_none()
+    if not saga:
+        return {"ok": False, "detail": "not found"}
+    if "status" in data:
+        saga.status = data["status"]
+    if "steps" in data:
+        saga.steps = data["steps"]
+    if "error_message" in data and data["error_message"]:
+        saga.error_message = data["error_message"]
+    await db.commit()
+    return {"ok": True, "saga_id": saga_id}
+
+
 @router.get("")
 @router.get("/")
 async def list_sagas(status: str | None = None, db: AsyncSession = Depends(get_db)):

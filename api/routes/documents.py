@@ -1,3 +1,4 @@
+import uuid as _uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +7,24 @@ from api.database import get_db
 from api.models import DocumentJob
 
 router = APIRouter()
+
+
+@router.post("")
+@router.post("/")
+async def create_job(data: dict, db: AsyncSession = Depends(get_db)):
+    job = DocumentJob(
+        id=data.get("id", str(_uuid.uuid4())),
+        document_type=data.get("document_type", "UNKNOWN"),
+        reference_id=data.get("reference_id"),
+        reference_type=data.get("reference_type", "unknown"),
+        template_data=data.get("template_data", {}),
+        status=data.get("status", "PENDING"),
+        document_url=data.get("document_url"),
+        requested_by_agent=data.get("requested_by_agent", "unknown"),
+    )
+    db.add(job)
+    await db.commit()
+    return {"job_id": str(job.id), "status": job.status}
 
 
 @router.patch("/{job_id}")

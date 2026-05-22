@@ -1,6 +1,11 @@
 {
+  "venvPath": ".",
+  "venv": ".venv",
   "typeCheckingMode": "off",
   "reportMissingImports": "none",
   "reportMissingModuleSource": "none",
-  "ignore": ["**"]
+  "reportUndefinedVariable": "none",
+  "reportAttributeAccessIssue": "none",
+  "ignore": ["**"],
+  "exclude": ["**"]
 }

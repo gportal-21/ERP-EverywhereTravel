@@ -17,8 +17,10 @@ redis[hiredis]==5.2.1
 aio-pika==9.4.3
 
 # AI / Multiagente
+# anthropic para fallbacks directos cuando swarms no está disponible
 anthropic==0.40.0
-swarms==6.8.7
+# swarms y sus deps (langchain, litellm) se instalan en capa separada del Dockerfile
+# con --no-deps para evitar que torch/transformers rompan el build (ver Dockerfile.api)
 
 # Validación y schemas
 pydantic==2.10.3
@@ -26,13 +28,14 @@ pydantic-settings==2.6.1
 jsonschema==4.23.0
 
 # Auth
-python-jose[cryptography]==3.3.0
+PyJWT==2.8.0
 passlib[bcrypt]==1.7.4
 
 # Documentos
 jinja2==3.1.4
 boto3==1.35.78
-# weasyprint requiere libs del sistema (libpango, libcairo) — instalar manualmente si se necesita PDF nativo
+xhtml2pdf==0.2.16
+# svglib y reportlab se resuelven con versiones compatibles (pycairo se compila con build-essential)
 
 # Observabilidad
 prometheus-fastapi-instrumentator==7.0.0

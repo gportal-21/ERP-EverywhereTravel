@@ -12,6 +12,5 @@ scrape_configs:
     static_configs:
       - targets: ['rabbitmq:15692']
 
-  - job_name: 'redis'
-    static_configs:
-      - targets: ['redis:6379']
+  # Redis no expone endpoint Prometheus nativo; requiere redis_exporter sidecar
+  # - job_name: 'redis'

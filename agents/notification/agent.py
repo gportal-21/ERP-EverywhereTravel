@@ -22,11 +22,12 @@ logger = logging.getLogger(__name__)
 DB_API_URL = os.environ.get("DB_API_URL", "http://api:8000")
 
 EVENT_TEMPLATES = {
-    "DocumentReady": "Documento disponible: {document_type}. Descarga: {document_url}",
+    "DocumentReady":      "Documento disponible: {document_type}. Descarga: {document_url}",
     "ReservationConfirmed": "Reserva {reservation_code} confirmada. Viaje: {travel_start}",
-    "PaymentOverdue": "ALERTA: Pago vencido — Reserva {reservation_code}",
-    "AgentDegraded": "ALERTA SISTEMA: Agente {agent_id} degradado",
-    "ValidationFailed": "Validación fallida para cotización {quote_id}",
+    "PaymentOverdue":     "ALERTA: Pago vencido — Reserva {reservation_code}",
+    "AgentDegraded":      "ALERTA SISTEMA: Agente {agent_id} degradado",
+    "ValidationFailed":   "Validación fallida para cotización {quote_id}",
+    "ItineraryReady":     "Itinerario listo para {destination}. Descarga: {itinerary_url}",
 }
 
 

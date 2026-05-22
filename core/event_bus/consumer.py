@@ -37,6 +37,7 @@ QUEUE_ROUTING_KEYS: dict[str, list[str]] = {
     "document-jobs":         ["document.#", "document.generate"],
     "monitoring-events":     ["monitoring.#"],
     "notification-events":   ["*.notification", "notification.#"],
+    "itinerary-events":      ["itinerary.#", "itinerary.generate"],
     "orchestrator-commands": ["orchestrator.#", "orchestrator.route",
                               "orchestrator.conflict", "orchestrator.blocking"],
     "dead-letter-queue":     ["#"],

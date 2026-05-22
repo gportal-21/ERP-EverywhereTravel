@@ -9,20 +9,39 @@ Implementa el patrón Saga con:
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+
+import httpx
 
 from core.shared_state.redis_store import RedisStore
 
 logger = logging.getLogger(__name__)
 
 STALE_THRESHOLD_SECONDS = 300
+_DB_API_URL = os.environ.get("DB_API_URL", "http://api:8000")
 
 
 class SagaCoordinator:
     def __init__(self, redis_store: RedisStore) -> None:
         self._redis = redis_store
+
+    async def _sync_to_db(self, saga_id: str, saga: dict) -> None:
+        """Sincroniza el estado de la saga hacia PostgreSQL (best-effort)."""
+        try:
+            async with httpx.AsyncClient(base_url=_DB_API_URL, timeout=5) as client:
+                await client.patch(
+                    f"/api/v1/sagas/{saga_id}",
+                    json={
+                        "status": saga.get("status", "RUNNING"),
+                        "steps": saga.get("steps", []),
+                        "error_message": saga.get("error_message"),
+                    },
+                )
+        except Exception as e:
+            logger.debug(f"[Saga] Sync a DB fallida (no crítico): {e}")
 
     async def start_saga(
         self,
@@ -77,6 +96,7 @@ class SagaCoordinator:
             saga["completed_at"] = datetime.now(timezone.utc).isoformat()
 
         await self._redis.save_saga(saga_id, saga)
+        await self._sync_to_db(saga_id, saga)
         logger.debug(f"[Saga:{saga_id}] Paso '{step_name}' → {status}")
 
     async def fail_saga(self, saga_id: str, reason: str) -> None:
@@ -86,6 +106,7 @@ class SagaCoordinator:
             saga["error_message"] = reason
             saga["updated_at"] = datetime.now(timezone.utc).isoformat()
             await self._redis.save_saga(saga_id, saga)
+            await self._sync_to_db(saga_id, saga)
         logger.error(f"[Saga:{saga_id}] Fallida: {reason}")
 
     async def complete_saga(self, saga_id: str) -> None:
@@ -94,6 +115,7 @@ class SagaCoordinator:
             saga["status"] = "COMPLETED"
             saga["completed_at"] = datetime.now(timezone.utc).isoformat()
             await self._redis.save_saga(saga_id, saga)
+            await self._sync_to_db(saga_id, saga)
         logger.info(f"[Saga:{saga_id}] Completada exitosamente")
 
     async def get_saga_status(self, saga_id: str) -> dict | None:

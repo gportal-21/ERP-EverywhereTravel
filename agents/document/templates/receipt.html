@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<style>
+  @page { size: A4; margin: 20mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #1a1a1a; font-size: 10pt; line-height: 1.5; }
+
+  /* Header */
+  .header { display: flex; justify-content: space-between; align-items: flex-start;
+            border-bottom: 3px solid #1e40af; padding-bottom: 16px; margin-bottom: 20px; }
+  .brand h1 { font-size: 22pt; font-weight: bold; color: #1e40af; letter-spacing: 1px; }
+  .brand p { font-size: 8pt; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; }
+  .brand .address { font-size: 8.5pt; color: #374151; margin-top: 6px; }
+  .receipt-badge { text-align: right; }
+  .receipt-badge .type { font-size: 18pt; font-weight: bold; color: #1e40af; letter-spacing: 2px; }
+  .receipt-badge .number { font-size: 11pt; color: #374151; font-weight: bold; margin-top: 4px; }
+  .receipt-badge .date { font-size: 8.5pt; color: #6b7280; margin-top: 2px; }
+
+  /* Status badge */
+  .status-banner { padding: 8px 16px; border-radius: 6px; margin-bottom: 20px;
+                   display: flex; justify-content: space-between; align-items: center; }
+  .status-banner.complete { background: #f0fdf4; border: 1px solid #86efac; }
+  .status-banner.partial  { background: #fefce8; border: 1px solid #fde047; }
+  .status-banner .status-text { font-weight: bold; font-size: 10pt; }
+  .status-banner.complete .status-text { color: #15803d; }
+  .status-banner.partial  .status-text  { color: #a16207; }
+  .status-banner .status-desc { font-size: 8.5pt; color: #6b7280; }
+
+  /* Info grid */
+  .info-grid { display: flex; gap: 16px; margin-bottom: 20px; }
+  .info-box { flex: 1; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; }
+  .info-box h4 { font-size: 8pt; text-transform: uppercase; color: #9ca3af; letter-spacing: 1px; margin-bottom: 8px; }
+  .info-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+  .info-label { font-size: 8.5pt; color: #6b7280; }
+  .info-value { font-size: 8.5pt; color: #111827; font-weight: 500; }
+
+  /* Payment details */
+  .section-title { font-size: 11pt; font-weight: bold; color: #1e3a8a;
+                   border-bottom: 1px solid #e5e7eb; padding-bottom: 6px; margin: 16px 0 12px; }
+
+  .payment-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+  .payment-table th { background: #f9fafb; color: #374151; font-size: 8.5pt;
+                      text-align: left; padding: 8px 10px; border-bottom: 2px solid #e5e7eb; }
+  .payment-table td { padding: 8px 10px; border-bottom: 1px solid #f3f4f6; font-size: 9pt; }
+  .payment-table tr:last-child td { border-bottom: none; }
+  .payment-table .amount { text-align: right; font-weight: bold; color: #15803d; }
+  .payment-table .method-badge { background: #eff6ff; color: #1d4ed8; border-radius: 4px;
+                                  padding: 2px 8px; font-size: 8pt; }
+
+  /* Summary box */
+  .summary { border: 2px solid #1e40af; border-radius: 10px; padding: 16px; margin-bottom: 20px; }
+  .summary-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; }
+  .summary-row.total { border-top: 2px solid #1e40af; margin-top: 8px; padding-top: 10px; }
+  .summary-label { font-size: 9.5pt; color: #374151; }
+  .summary-value { font-size: 9.5pt; font-weight: 600; }
+  .summary-value.paid { color: #15803d; }
+  .summary-value.balance { color: {{ '#dc2626' if balance > 0 else '#15803d' }}; }
+  .summary-row.total .summary-label { font-size: 12pt; font-weight: bold; color: #1e40af; }
+  .summary-row.total .summary-value { font-size: 14pt; font-weight: bold; color: #1e40af; }
+
+  /* Progress bar */
+  .progress-section { margin-bottom: 16px; }
+  .progress-label { display: flex; justify-content: space-between; font-size: 8pt;
+                    color: #6b7280; margin-bottom: 5px; }
+  .progress-bar { height: 10px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 999px; background: {{ '#16a34a' if balance <= 0 else '#3b82f6' }}; }
+
+  /* Legal */
+  .legal { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px;
+           padding: 12px 14px; margin-bottom: 16px; font-size: 7.5pt; color: #6b7280; }
+  .legal strong { color: #374151; }
+
+  /* Signature */
+  .signature-area { display: flex; gap: 40px; margin-top: 30px; padding-top: 16px;
+                    border-top: 1px solid #e5e7eb; }
+  .sig-box { flex: 1; text-align: center; }
+  .sig-line { border-top: 1px solid #374151; margin: 30px auto 6px; width: 80%; }
+  .sig-label { font-size: 8pt; color: #6b7280; }
+
+  /* Footer */
+  .doc-footer { background: #1e3a8a; color: white; padding: 10px 16px; margin-top: 20px;
+                border-radius: 6px; display: flex; justify-content: space-between;
+                font-size: 7.5pt; }
+  .doc-footer .left { opacity: 0.85; }
+  .doc-footer .right { text-align: right; opacity: 0.75; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="brand">
+    <h1>✈ EVERYWHERE TRAVEL</h1>
+    <p>Agencia de Viajes Autorizada</p>
+    <div class="address">
+      RUC: 20123456789 | Av. Larco 1234, Miraflores, Lima<br>
+      Tel: +51 999 000 000 | contacto@everywheretravel.com
+    </div>
+  </div>
+  <div class="receipt-badge">
+    <div class="type">COMPROBANTE</div>
+    <div class="type" style="font-size:14pt">DE PAGO</div>
+    <div class="number">{{ receipt_number }}</div>
+    <div class="date">{{ issue_date }}</div>
+  </div>
+</div>
+
+<!-- Status -->
+<div class="status-banner {{ 'complete' if balance <= 0 else 'partial' }}">
+  <div>
+    <div class="status-text">{{ 'PAGO COMPLETADO' if balance <= 0 else 'PAGO PARCIAL REGISTRADO' }}</div>
+    <div class="status-desc">Reserva: {{ reservation_code }}</div>
+  </div>
+  <div style="font-size:9pt; color:#6b7280;">{{ issue_date }}</div>
+</div>
+
+<!-- Info Grid -->
+<div class="info-grid">
+  <div class="info-box">
+    <h4>📋 Datos del Cliente</h4>
+    <div class="info-row">
+      <span class="info-label">Nombre</span>
+      <span class="info-value">{{ client_name }}</span>
+    </div>
+    {% if client_doc %}
+    <div class="info-row">
+      <span class="info-label">Documento</span>
+      <span class="info-value">{{ client_doc }}</span>
+    </div>
+    {% endif %}
+    <div class="info-row">
+      <span class="info-label">Reserva</span>
+      <span class="info-value" style="color:#1e40af;font-weight:bold">{{ reservation_code }}</span>
+    </div>
+  </div>
+  <div class="info-box">
+    <h4>✈ Datos del Viaje</h4>
+    {% if destination %}
+    <div class="info-row">
+      <span class="info-label">Destino</span>
+      <span class="info-value">{{ destination }}</span>
+    </div>
+    {% endif %}
+    {% if travel_dates %}
+    <div class="info-row">
+      <span class="info-label">Fechas</span>
+      <span class="info-value">{{ travel_dates }}</span>
+    </div>
+    {% endif %}
+    <div class="info-row">
+      <span class="info-label">Estado reserva</span>
+      <span class="info-value">{{ reservation_status }}</span>
+    </div>
+  </div>
+</div>
+
+<!-- This payment -->
+<div class="section-title">💳 Detalle del Pago Actual</div>
+<table class="payment-table">
+  <thead>
+    <tr>
+      <th>Concepto</th>
+      <th>Método de Pago</th>
+      <th>Referencia</th>
+      <th>Fecha</th>
+      <th style="text-align:right">Monto</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Pago por reserva turística {{ reservation_code }}</td>
+      <td><span class="method-badge">{{ payment_method }}</span></td>
+      <td>{{ payment_reference }}</td>
+      <td>{{ issue_date }}</td>
+      <td class="amount">S/. {{ "%.2f"|format(amount_paid) }}</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- Summary -->
+<div class="section-title">📊 Resumen de Cuenta</div>
+
+<!-- Progress bar -->
+<div class="progress-section">
+  <div class="progress-label">
+    <span>Progreso de pago</span>
+    <span>{{ payment_pct }}%</span>
+  </div>
+  <div class="progress-bar">
+    <div class="progress-fill" style="width:{{ payment_pct }}%"></div>
+  </div>
+</div>
+
+<div class="summary">
+  <div class="summary-row">
+    <span class="summary-label">Total del servicio</span>
+    <span class="summary-value">S/. {{ "%.2f"|format(total_charged) }}</span>
+  </div>
+  <div class="summary-row">
+    <span class="summary-label">Pagos anteriores</span>
+    <span class="summary-value paid">S/. {{ "%.2f"|format(previous_payments) }}</span>
+  </div>
+  <div class="summary-row">
+    <span class="summary-label">Pago de este comprobante</span>
+    <span class="summary-value paid">+ S/. {{ "%.2f"|format(amount_paid) }}</span>
+  </div>
+  <div class="summary-row total">
+    <span class="summary-label">{{ 'Saldo pendiente' if balance > 0 else 'PAGADO COMPLETO' }}</span>
+    <span class="summary-value balance">S/. {{ "%.2f"|format(balance if balance > 0 else 0) }}</span>
+  </div>
+</div>
+
+<!-- Legal -->
+<div class="legal">
+  <strong>Condiciones:</strong> Este comprobante acredita el pago recibido por los servicios turísticos contratados.
+  Everywhere Travel S.A.C. se rige por la Ley N° 26961 (Ley para el Desarrollo de la Actividad Turística)
+  y el Reglamento de Agencias de Viajes y Turismo D.S. N° 004-2016-MINCETUR.
+  Las reservas son intransferibles. Para cancelaciones consultar nuestras políticas vigentes.
+</div>
+
+<!-- Signature -->
+<div class="signature-area">
+  <div class="sig-box">
+    <div class="sig-line"></div>
+    <div class="sig-label">Agente de Viajes Responsable</div>
+    <div class="sig-label" style="color:#1e40af;font-weight:bold">Everywhere Travel S.A.C.</div>
+  </div>
+  <div class="sig-box">
+    <div class="sig-line"></div>
+    <div class="sig-label">Firma del Cliente</div>
+    <div class="sig-label">{{ client_name }}</div>
+  </div>
+</div>
+
+<!-- Footer -->
+<div class="doc-footer">
+  <div class="left">
+    Everywhere Travel S.A.C. | RUC: 20123456789<br>
+    Sistema Multiagente — Documento generado electrónicamente
+  </div>
+  <div class="right">
+    {{ receipt_number }} | {{ issue_date }}<br>
+    Este documento tiene validez como comprobante de pago
+  </div>
+</div>
+
+</body>
+</html>

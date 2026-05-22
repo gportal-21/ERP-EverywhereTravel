@@ -4,13 +4,14 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Package, FileText, BookOpen,
-  DollarSign, Activity, LogOut, User, Shield, ChevronRight,
+  DollarSign, Activity, LogOut, User, Shield, ChevronRight, Users,
 } from "lucide-react";
 import AuthGuard from "@/components/auth-guard";
 import { useAuthStore } from "@/lib/auth-store";
 
 const NAV = [
   { href: "/",             label: "Dashboard",    icon: LayoutDashboard },
+  { href: "/clients",      label: "Clientes",     icon: Users },
   { href: "/packages",     label: "Paquetes",     icon: Package },
   { href: "/quotations",   label: "Cotizaciones", icon: FileText },
   { href: "/reservations", label: "Reservas",     icon: BookOpen },

@@ -39,7 +39,7 @@ class MCPEnvelope(BaseModel):
             "orchestrator-agent", "sales-agent", "quotation-agent",
             "reservation-agent", "finance-agent", "document-agent",
             "validation-agent", "monitoring-agent", "notification-agent",
-            "api-gateway",
+            "itinerary-agent", "api-gateway",
         }
         if self.sender_agent not in valid_agents:
             raise ValueError(f"sender_agent inválido: {self.sender_agent}")
