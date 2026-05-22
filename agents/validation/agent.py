@@ -31,7 +31,7 @@ MIN_MARGIN = Decimal("15.0")
 
 class ValidationAgent(BaseAgent):
     agent_id = "validation-agent"
-    queue_name = "quotation-events"  # Escucha cotizaciones para validar
+    queue_name = "validation-events"
     system_prompt_file = "agents/validation/prompts/system_prompt.txt"
 
     def __init__(self) -> None:

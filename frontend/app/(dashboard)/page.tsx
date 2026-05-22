@@ -25,35 +25,43 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Cargar datos iniciales
-    Promise.all([
-      fetch(`${API}/api/v1/monitoring/health`).then((r) => r.json()),
-      fetch(`${API}/api/v1/sagas?status=RUNNING`).then((r) => r.json()),
-    ]).then(([healthData, sagasData]) => {
-      setHealth(healthData);
-      setSagas(sagasData.sagas || []);
+    const loadData = async () => {
+      try {
+        const [healthData, sagasData] = await Promise.all([
+          fetch(`${API}/api/v1/monitoring/health`).then((r) => r.ok ? r.json() : null),
+          fetch(`${API}/api/v1/sagas?status=RUNNING`).then((r) => r.ok ? r.json() : { sagas: [] }),
+        ]);
+        if (healthData) setHealth(healthData);
+        setSagas(sagasData?.sagas || []);
+      } catch (_) {}
       setLoading(false);
-    }).catch(() => setLoading(false));
+    };
+    loadData();
 
     // WebSocket para alertas en tiempo real
-    const ws = new WebSocket(`${WS}/ws/system:alerts`);
-    ws.onmessage = (e) => {
-      const data = JSON.parse(e.data);
-      setAlerts((prev) => [
-        { type: data.type, message: data.message || data.type, timestamp: new Date().toISOString() },
-        ...prev.slice(0, 9),
-      ]);
-    };
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(`${WS}/ws/system:alerts`);
+      ws.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          setAlerts((prev) => [
+            { type: data.type, message: data.message || data.type, timestamp: new Date().toISOString() },
+            ...prev.slice(0, 9),
+          ]);
+        } catch (_) {}
+      };
+    } catch (_) {}
 
-    const interval = setInterval(() => {
-      fetch(`${API}/api/v1/monitoring/health`)
-        .then((r) => r.json())
-        .then(setHealth)
-        .catch(() => {});
+    const interval = setInterval(async () => {
+      try {
+        const r = await fetch(`${API}/api/v1/monitoring/health`);
+        if (r.ok) setHealth(await r.json());
+      } catch (_) {}
     }, 15000);
 
     return () => {
-      ws.close();
+      try { ws?.close(); } catch (_) {}
       clearInterval(interval);
     };
   }, []);

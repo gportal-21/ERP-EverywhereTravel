@@ -115,6 +115,8 @@ services:
       AGENT_TYPE: orchestrator
     depends_on:
       - api
+    volumes:
+      - .:/app
     command: python -m agents.orchestrator.agent
 
   sales_worker:
@@ -130,6 +132,8 @@ services:
       AGENT_TYPE: sales
     depends_on:
       - orchestrator
+    volumes:
+      - .:/app
     command: python -m agents.sales.agent
 
   quotation_worker:
@@ -145,6 +149,8 @@ services:
       AGENT_TYPE: quotation
     depends_on:
       - orchestrator
+    volumes:
+      - .:/app
     command: python -m agents.quotation.agent
 
   document_worker:
@@ -163,6 +169,8 @@ services:
     depends_on:
       - orchestrator
       - minio
+    volumes:
+      - .:/app
     command: python -m agents.document.agent
     deploy:
       replicas: 3
@@ -180,7 +188,81 @@ services:
       AGENT_TYPE: monitoring
     depends_on:
       - orchestrator
+    volumes:
+      - .:/app
     command: python -m agents.monitoring.agent
+
+  reservation_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: et_reservation
+    environment:
+      DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
+      REDIS_URL: redis://:etredispass@redis:6379/0
+      RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      DB_API_URL: http://api:8000
+      AGENT_TYPE: reservation
+    depends_on:
+      - orchestrator
+    volumes:
+      - .:/app
+    command: python -m agents.reservation.agent
+
+  finance_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: et_finance
+    environment:
+      DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
+      REDIS_URL: redis://:etredispass@redis:6379/0
+      RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      DB_API_URL: http://api:8000
+      AGENT_TYPE: finance
+    depends_on:
+      - orchestrator
+    volumes:
+      - .:/app
+    command: python -m agents.finance.agent
+
+  validation_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: et_validation
+    environment:
+      DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
+      REDIS_URL: redis://:etredispass@redis:6379/0
+      RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      DB_API_URL: http://api:8000
+      AGENT_TYPE: validation
+    depends_on:
+      - orchestrator
+    volumes:
+      - .:/app
+    command: python -m agents.validation.agent
+
+  notification_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: et_notification
+    environment:
+      DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
+      REDIS_URL: redis://:etredispass@redis:6379/0
+      RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      DB_API_URL: http://api:8000
+      AGENT_TYPE: notification
+    depends_on:
+      - orchestrator
+    volumes:
+      - .:/app
+    command: python -m agents.notification.agent
 
   # ─── Observabilidad ───────────────────────────────────────────────
   prometheus:

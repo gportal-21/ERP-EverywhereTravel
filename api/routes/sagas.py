@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
@@ -8,11 +8,13 @@ from api.models import Saga
 router = APIRouter()
 
 
+@router.get("")
 @router.get("/")
 async def list_sagas(status: str | None = None, db: AsyncSession = Depends(get_db)):
     stmt = select(Saga).order_by(Saga.created_at.desc()).limit(100)
     if status:
-        stmt = stmt.where(Saga.status == status)
+        # Cast explícito porque status es enum en PostgreSQL
+        stmt = stmt.where(text("sagas.status::text = :s").bindparams(s=status))
     result = await db.execute(stmt)
     sagas = result.scalars().all()
     return {"sagas": [

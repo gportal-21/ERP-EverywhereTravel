@@ -90,6 +90,7 @@ app = FastAPI(
     description="Plataforma interna de gestión para agencia de viajes",
     version="1.0.0",
     lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 app.add_middleware(

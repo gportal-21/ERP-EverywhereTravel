@@ -31,6 +31,7 @@ DL_EXCHANGE_NAME = "everywheretravel.dead_letter"
 QUEUE_ROUTING_KEYS: dict[str, list[str]] = {
     "sales-events":          ["sales.#", "sales.quotation_validated"],
     "quotation-events":      ["quotation.#", "quotation.request"],
+    "validation-events":     ["validation.#", "validation.check"],
     "reservation-events":    ["reservation.#", "reservation.create"],
     "finance-events":        ["finance.#", "finance.payment", "finance.reservation_created"],
     "document-jobs":         ["document.#", "document.generate"],
