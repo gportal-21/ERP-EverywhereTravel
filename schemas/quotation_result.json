@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "QuotationResult",
+  "type": "object",
+  "required": ["quote_id", "version", "client_id", "line_items", "total_cost", "margin_pct", "currency", "valid_until", "status"],
+  "properties": {
+    "quote_id":      { "type": "string" },
+    "version":       { "type": "integer", "minimum": 1 },
+    "package_id":    { "type": ["string", "null"] },
+    "client_id":     { "type": "string" },
+    "line_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["concept", "unit_price", "quantity", "subtotal"],
+        "properties": {
+          "concept":    { "type": "string" },
+          "unit_price": { "type": "number", "minimum": 0 },
+          "quantity":   { "type": "integer", "minimum": 1 },
+          "subtotal":   { "type": "number", "minimum": 0 }
+        }
+      }
+    },
+    "total_cost":     { "type": "number", "minimum": 0 },
+    "margin_pct":     { "type": "number", "minimum": 0, "maximum": 100 },
+    "currency":       { "type": "string", "minLength": 3, "maxLength": 3 },
+    "valid_until":    { "type": "string" },
+    "status":         { "type": "string", "enum": ["DRAFT", "VALIDATED", "REJECTED", "EXPIRED"] },
+    "anomaly_flags":  { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

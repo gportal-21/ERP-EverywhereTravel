@@ -1,0 +1,226 @@
+services:
+  # ─── Bases de datos ──────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: et_postgres
+    environment:
+      POSTGRES_DB: everywheretravel
+      POSTGRES_USER: etuser
+      POSTGRES_PASSWORD: etpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U etuser -d everywheretravel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: et_redis
+    command: redis-server --requirepass etredispass --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "etredispass", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Message Broker ──────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: et_rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: etrabbit
+      RABBITMQ_DEFAULT_PASS: etrabbitpass
+      RABBITMQ_DEFAULT_VHOST: everywheretravel
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./infrastructure/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json
+      - ./infrastructure/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ─── Object Storage (S3-compatible) ──────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: et_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: etminio
+      MINIO_ROOT_PASSWORD: etminiopass
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ─── Backend API ─────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: et_api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
+      REDIS_URL: redis://:etredispass@redis:6379/0
+      RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: etminio
+      MINIO_SECRET_KEY: etminiopass
+      SECRET_KEY: supersecretkey-change-in-production
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ENVIRONMENT: development
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ─── Agent Workers ────────────────────────────────────────────────
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: et_orchestrator
+    environment:
+      DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
+      REDIS_URL: redis://:etredispass@redis:6379/0
+      RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      AGENT_TYPE: orchestrator
+    depends_on:
+      - api
+    command: python -m agents.orchestrator.agent
+
+  sales_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: et_sales
+    environment:
+      DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
+      REDIS_URL: redis://:etredispass@redis:6379/0
+      RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      AGENT_TYPE: sales
+    depends_on:
+      - orchestrator
+    command: python -m agents.sales.agent
+
+  quotation_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: et_quotation
+    environment:
+      DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
+      REDIS_URL: redis://:etredispass@redis:6379/0
+      RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      AGENT_TYPE: quotation
+    depends_on:
+      - orchestrator
+    command: python -m agents.quotation.agent
+
+  document_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
+      REDIS_URL: redis://:etredispass@redis:6379/0
+      RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: etminio
+      MINIO_SECRET_KEY: etminiopass
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      AGENT_TYPE: document
+    depends_on:
+      - orchestrator
+      - minio
+    command: python -m agents.document.agent
+    deploy:
+      replicas: 3
+
+  monitoring_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: et_monitoring
+    environment:
+      DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
+      REDIS_URL: redis://:etredispass@redis:6379/0
+      RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      AGENT_TYPE: monitoring
+    depends_on:
+      - orchestrator
+    command: python -m agents.monitoring.agent
+
+  # ─── Observabilidad ───────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: et_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: et_grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: etgrafana
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infrastructure/grafana/dashboards:/etc/grafana/provisioning/dashboards
+
+  # ─── Frontend ─────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: et_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_WS_URL: ws://localhost:8000
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  minio_data:
+  prometheus_data:
+  grafana_data:

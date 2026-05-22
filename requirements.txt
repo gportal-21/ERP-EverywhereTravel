@@ -1,0 +1,48 @@
+# API Framework
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12
+websockets==13.1
+
+# Async PostgreSQL
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+psycopg2-binary==2.9.10
+
+# Redis
+redis[hiredis]==5.2.1
+
+# RabbitMQ
+aio-pika==9.4.3
+
+# AI / Multiagente
+anthropic==0.40.0
+swarms==6.8.7
+
+# Validación y schemas
+pydantic==2.10.3
+pydantic-settings==2.6.1
+jsonschema==4.23.0
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Documentos
+jinja2==3.1.4
+boto3==1.35.78
+# weasyprint requiere libs del sistema (libpango, libcairo) — instalar manualmente si se necesita PDF nativo
+
+# Observabilidad
+prometheus-fastapi-instrumentator==7.0.0
+structlog==24.4.0
+
+# HTTP client
+httpx==0.28.1
+
+# Utilidades
+python-dotenv==1.0.1
+tenacity==9.0.0
+aiofiles==24.1.0
+orjson==3.10.12

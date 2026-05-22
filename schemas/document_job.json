@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DocumentJob",
+  "type": "object",
+  "required": ["job_id", "document_type", "reference_id", "reference_type", "template_data", "requested_by"],
+  "properties": {
+    "job_id":         { "type": "string" },
+    "document_type":  { "type": "string", "enum": ["VOUCHER", "INVOICE", "LIQUIDATION", "REPORT", "CONTRACT"] },
+    "reference_id":   { "type": "string" },
+    "reference_type": { "type": "string" },
+    "template_data":  { "type": "object" },
+    "priority":       { "type": "string", "enum": ["LOW", "NORMAL", "HIGH", "CRITICAL"] },
+    "requested_by":   { "type": "string" }
+  },
+  "additionalProperties": false
+}

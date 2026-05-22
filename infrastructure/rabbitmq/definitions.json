@@ -1,0 +1,103 @@
+{
+  "vhosts": [{ "name": "everywheretravel" }],
+  "exchanges": [
+    {
+      "name": "everywheretravel.events",
+      "vhost": "everywheretravel",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false
+    },
+    {
+      "name": "everywheretravel.dead_letter",
+      "vhost": "everywheretravel",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false
+    }
+  ],
+  "queues": [
+    {
+      "name": "sales-events",
+      "vhost": "everywheretravel",
+      "durable": true,
+      "arguments": {
+        "x-dead-letter-exchange": "everywheretravel.dead_letter",
+        "x-dead-letter-routing-key": "dead.sales",
+        "x-message-ttl": 300000
+      }
+    },
+    {
+      "name": "quotation-events",
+      "vhost": "everywheretravel",
+      "durable": true,
+      "arguments": {
+        "x-dead-letter-exchange": "everywheretravel.dead_letter",
+        "x-dead-letter-routing-key": "dead.quotation"
+      }
+    },
+    {
+      "name": "reservation-events",
+      "vhost": "everywheretravel",
+      "durable": true,
+      "arguments": {
+        "x-dead-letter-exchange": "everywheretravel.dead_letter",
+        "x-dead-letter-routing-key": "dead.reservation"
+      }
+    },
+    {
+      "name": "finance-events",
+      "vhost": "everywheretravel",
+      "durable": true,
+      "arguments": {
+        "x-dead-letter-exchange": "everywheretravel.dead_letter",
+        "x-dead-letter-routing-key": "dead.finance"
+      }
+    },
+    {
+      "name": "document-jobs",
+      "vhost": "everywheretravel",
+      "durable": true,
+      "arguments": {
+        "x-dead-letter-exchange": "everywheretravel.dead_letter",
+        "x-dead-letter-routing-key": "dead.document",
+        "x-max-priority": 10
+      }
+    },
+    {
+      "name": "monitoring-events",
+      "vhost": "everywheretravel",
+      "durable": true,
+      "arguments": {}
+    },
+    {
+      "name": "notification-events",
+      "vhost": "everywheretravel",
+      "durable": true,
+      "arguments": {}
+    },
+    {
+      "name": "orchestrator-commands",
+      "vhost": "everywheretravel",
+      "durable": true,
+      "arguments": {}
+    },
+    {
+      "name": "dead-letter-queue",
+      "vhost": "everywheretravel",
+      "durable": true,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    { "source": "everywheretravel.events", "vhost": "everywheretravel", "destination": "sales-events",          "destination_type": "queue", "routing_key": "sales.#" },
+    { "source": "everywheretravel.events", "vhost": "everywheretravel", "destination": "quotation-events",      "destination_type": "queue", "routing_key": "quotation.#" },
+    { "source": "everywheretravel.events", "vhost": "everywheretravel", "destination": "reservation-events",    "destination_type": "queue", "routing_key": "reservation.#" },
+    { "source": "everywheretravel.events", "vhost": "everywheretravel", "destination": "finance-events",        "destination_type": "queue", "routing_key": "finance.#" },
+    { "source": "everywheretravel.events", "vhost": "everywheretravel", "destination": "document-jobs",         "destination_type": "queue", "routing_key": "document.#" },
+    { "source": "everywheretravel.events", "vhost": "everywheretravel", "destination": "monitoring-events",     "destination_type": "queue", "routing_key": "monitoring.#" },
+    { "source": "everywheretravel.events", "vhost": "everywheretravel", "destination": "notification-events",   "destination_type": "queue", "routing_key": "*.notification" },
+    { "source": "everywheretravel.events", "vhost": "everywheretravel", "destination": "orchestrator-commands", "destination_type": "queue", "routing_key": "orchestrator.#" },
+    { "source": "everywheretravel.dead_letter", "vhost": "everywheretravel", "destination": "dead-letter-queue", "destination_type": "queue", "routing_key": "#" }
+  ]
+}
