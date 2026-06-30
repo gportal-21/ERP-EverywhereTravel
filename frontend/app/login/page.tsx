@@ -11,7 +11,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  // Si ya está autenticado, redirigir al dashboard
   useEffect(() => {
     hydrate();
   }, [hydrate]);
@@ -52,11 +51,11 @@ export default function LoginPage() {
 
         {/* Card */}
         <div className="backdrop-blur-xl bg-white/[0.07] rounded-3xl shadow-2xl p-8 border border-white/[0.08] ring-1 ring-inset ring-white/[0.05]">
-          <h2 className="text-lg font-semibold text-white/90 mb-6">Iniciar sesión</h2>
+          <h2 className="text-lg font-semibold text-white/90 mb-6">Iniciar sesion</h2>
 
           <form onSubmit={handleLogin} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-blue-200/70 mb-2">
+              <label htmlFor="login-username" className="block text-sm font-medium text-blue-200/70 mb-2">
                 Usuario
               </label>
               <div className="relative">
@@ -73,14 +72,14 @@ export default function LoginPage() {
                   placeholder="admin"
                   required
                   autoComplete="username"
-                  className="w-full bg-white/[0.06] border border-white/[0.1] rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-white/25 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+                  className="w-full bg-white/[0.06] border border-white/[0.1] rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-white/25 focus:border-blue-500/50 transition-all"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-blue-200/70 mb-2">
-                Contraseña
+              <label htmlFor="login-password" className="block text-sm font-medium text-blue-200/70 mb-2">
+                Contrasena
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
@@ -93,15 +92,16 @@ export default function LoginPage() {
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="--------"
                   required
                   autoComplete="current-password"
-                  className="w-full bg-white/[0.06] border border-white/[0.1] rounded-xl pl-10 pr-11 py-3 text-sm text-white placeholder-white/25 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+                  className="w-full bg-white/[0.06] border border-white/[0.1] rounded-xl pl-10 pr-11 py-3 text-sm text-white placeholder-white/25 focus:border-blue-500/50 transition-all"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-blue-300/40 hover:text-blue-300/70 transition-colors"
+                  aria-label={showPassword ? "Ocultar contrasena" : "Mostrar contrasena"}
                 >
                   {showPassword ? (
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -149,21 +149,20 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-7 pt-5 border-t border-white/[0.06]">
-            <p className="text-xs text-center text-white/25">
-              Sistema interno — acceso solo para personal autorizado
+            <p className="text-xs text-center text-white/30">
+              Sistema interno -- acceso solo para personal autorizado
             </p>
             <div className="mt-3 flex items-center justify-center gap-2">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400/60 animate-pulse" />
-              <p className="text-xs text-center text-white/20">
-                Demo: <code className="text-blue-300/40 bg-white/5 px-1.5 py-0.5 rounded">admin</code> / <code className="text-blue-300/40 bg-white/5 px-1.5 py-0.5 rounded">admin1234</code>
+              <p className="text-xs text-center text-white/25">
+                Demo: <code className="text-blue-300/50 bg-white/5 px-1.5 py-0.5 rounded">admin</code> / <code className="text-blue-300/50 bg-white/5 px-1.5 py-0.5 rounded">admin1234</code>
               </p>
             </div>
           </div>
         </div>
 
-        {/* Footer branding */}
-        <p className="text-center text-[10px] text-white/15 mt-6 font-medium tracking-wider uppercase">
-          Everywhere Travel © 2026 — Sistema Multiagente
+        <p className="text-center text-[11px] text-white/20 mt-6 font-medium tracking-wider uppercase">
+          Everywhere Travel 2026 -- Sistema Multiagente
         </p>
       </div>
     </div>
