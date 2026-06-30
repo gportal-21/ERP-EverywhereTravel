@@ -82,6 +82,16 @@ class NotificationAgent(BaseAgent):
                 "saga_id": envelope.saga_id,
             },
         )
+        if channel != "system:alerts":
+            await self._redis.publish_realtime(
+                "system:alerts",
+                {
+                    "type": event_type,
+                    "message": message,
+                    "data": payload,
+                    "saga_id": envelope.saga_id,
+                },
+            )
 
         # Eventos de alta prioridad también van a email
         if event_type in ("PaymentOverdue", "AgentDegraded"):

@@ -1,6 +1,7 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
@@ -38,9 +39,15 @@ async def list_clients(
 
 @router.post("/")
 async def create_client(data: dict, db: AsyncSession = Depends(get_db)):
+    full_name = data.get("full_name") or data.get("name")
+    if not full_name:
+        raise HTTPException(400, "El nombre del cliente es requerido")
+    if not data.get("email"):
+        raise HTTPException(400, "El email del cliente es requerido")
+
     c = Client(
         id=str(uuid.uuid4()),
-        full_name=data["full_name"],
+        full_name=full_name,
         email=data["email"],
         phone=data.get("phone"),
         document_type=data.get("document_type"),
@@ -85,5 +92,12 @@ async def delete_client(client_id: str, db: AsyncSession = Depends(get_db)):
     if not c:
         raise HTTPException(404, "Cliente no encontrado")
     await db.delete(c)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="No se puede eliminar el cliente porque tiene cotizaciones o reservas asociadas",
+        )
     return {"deleted": True, "id": client_id}

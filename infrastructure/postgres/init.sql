@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 CREATE TYPE quotation_status AS ENUM ('DRAFT', 'VALIDATED', 'REJECTED', 'EXPIRED');
 CREATE TYPE reservation_status AS ENUM ('PENDING_PAYMENT', 'CONFIRMED', 'CANCELLED', 'REFUNDED');
 CREATE TYPE liquidation_status AS ENUM ('PARTIAL', 'COMPLETE', 'OVERDUE');
-CREATE TYPE document_type AS ENUM ('VOUCHER', 'INVOICE', 'LIQUIDATION', 'REPORT', 'CONTRACT');
+CREATE TYPE document_type AS ENUM ('VOUCHER', 'INVOICE', 'LIQUIDATION', 'REPORT', 'CONTRACT', 'ITINERARY', 'RECEIPT');
 CREATE TYPE document_job_status AS ENUM ('QUEUED', 'PROCESSING', 'COMPLETE', 'FAILED');
 CREATE TYPE saga_status AS ENUM ('RUNNING', 'COMPLETED', 'COMPENSATING', 'FAILED', 'REQUIRES_MANUAL');
 CREATE TYPE validation_severity AS ENUM ('INFO', 'WARNING', 'ERROR', 'BLOCKING');
@@ -98,6 +98,7 @@ CREATE TABLE liquidations (
     commission_amount NUMERIC(12, 2) DEFAULT 0,
     commission_agent_id VARCHAR(100),
     status liquidation_status DEFAULT 'PARTIAL',
+    payment_schedule JSONB DEFAULT '[]',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );

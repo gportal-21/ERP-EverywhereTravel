@@ -37,6 +37,10 @@ from core.mcp.envelope import MCPEnvelope
 logger = logging.getLogger(__name__)
 
 DB_API_URL = os.environ.get("DB_API_URL", "http://api:8000")
+LLM_MODEL  = os.environ.get("LLM_MODEL", "ollama/qwen3:8b")
+ENABLE_INLINE_QUOTATION_PIPELINE = os.environ.get(
+    "ENABLE_INLINE_QUOTATION_PIPELINE", "false"
+).lower() == "true"
 
 # Routing estático para eventos que siguen usando RabbitMQ
 ROUTING_TABLE = {
@@ -127,7 +131,7 @@ class OrchestratorAgent(BaseAgent):
         self._conflict_agent = Agent(
             agent_name="conflict-resolver-et",
             system_prompt=_CONFLICT_RESOLUTION_PROMPT,
-            model_name="claude-sonnet-4-6",
+            model_name=LLM_MODEL,
             max_loops=1,
             output_type="str",
             verbose=False,
@@ -144,7 +148,7 @@ class OrchestratorAgent(BaseAgent):
         pipeline_sales = Agent(
             agent_name="pipeline-sales",
             system_prompt=_PIPELINE_SALES_PROMPT,
-            model_name="claude-sonnet-4-6",
+            model_name=LLM_MODEL,
             max_loops=1,
             output_type="str",
             temperature=0.1,
@@ -152,7 +156,7 @@ class OrchestratorAgent(BaseAgent):
         pipeline_quotation = Agent(
             agent_name="pipeline-quotation",
             system_prompt=_PIPELINE_QUOTATION_PROMPT,
-            model_name="claude-sonnet-4-6",
+            model_name=LLM_MODEL,
             max_loops=1,
             output_type="str",
             temperature=0.05,
@@ -160,7 +164,7 @@ class OrchestratorAgent(BaseAgent):
         pipeline_validation = Agent(
             agent_name="pipeline-validation",
             system_prompt=_PIPELINE_VALIDATION_PROMPT,
-            model_name="claude-sonnet-4-6",
+            model_name=LLM_MODEL,
             max_loops=1,
             output_type="str",
             temperature=0.05,
@@ -182,7 +186,7 @@ class OrchestratorAgent(BaseAgent):
         phase3_validation = Agent(
             agent_name="conflict-validation-agent",
             system_prompt=_VALIDATION_AGENT_PROMPT,
-            model_name="claude-sonnet-4-6",
+            model_name=LLM_MODEL,
             max_loops=1,
             output_type="str",
             temperature=0.1,
@@ -190,7 +194,7 @@ class OrchestratorAgent(BaseAgent):
         phase3_monitoring = Agent(
             agent_name="conflict-monitoring-agent",
             system_prompt=_MONITORING_AGENT_PROMPT,
-            model_name="claude-sonnet-4-6",
+            model_name=LLM_MODEL,
             max_loops=1,
             output_type="str",
             temperature=0.1,
@@ -235,7 +239,7 @@ class OrchestratorAgent(BaseAgent):
         catalog_packages = await self._fetch_catalog(inquiry)
         has_catalog_match = bool(catalog_packages)
 
-        if has_catalog_match and self._quotation_pipeline:
+        if has_catalog_match and self._quotation_pipeline and ENABLE_INLINE_QUOTATION_PIPELINE:
             # CAMINO RÁPIDO: SequentialWorkflow inline
             prompt = (
                 f"Client inquiry: {json.dumps(inquiry)}\n"

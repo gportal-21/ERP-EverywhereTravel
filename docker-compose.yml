@@ -85,9 +85,12 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: etminio
       MINIO_SECRET_KEY: etminiopass
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000}
       SECRET_KEY: supersecretkey-change-in-production
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-ollama/qwen3:8b}
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
       ENVIRONMENT: development
+      CORS_ORIGINS: "http://localhost:3000,http://frontend:3000,http://${HOST_IP:-localhost}:3000"
     ports:
       - "8000:8000"
     depends_on:
@@ -111,7 +114,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
       REDIS_URL: redis://:etredispass@redis:6379/0
       RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-ollama/qwen3:8b}
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
       AGENT_TYPE: orchestrator
     depends_on:
       - api
@@ -128,7 +132,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
       REDIS_URL: redis://:etredispass@redis:6379/0
       RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-ollama/qwen3:8b}
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
       AGENT_TYPE: sales
     depends_on:
       - orchestrator
@@ -145,7 +150,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
       REDIS_URL: redis://:etredispass@redis:6379/0
       RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-ollama/qwen3:8b}
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
       AGENT_TYPE: quotation
     depends_on:
       - orchestrator
@@ -164,7 +170,8 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: etminio
       MINIO_SECRET_KEY: etminiopass
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-ollama/qwen3:8b}
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
       AGENT_TYPE: document
     depends_on:
       - orchestrator
@@ -184,7 +191,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
       REDIS_URL: redis://:etredispass@redis:6379/0
       RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-ollama/qwen3:8b}
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
       AGENT_TYPE: monitoring
     depends_on:
       - orchestrator
@@ -201,7 +209,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
       REDIS_URL: redis://:etredispass@redis:6379/0
       RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-ollama/qwen3:8b}
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
       DB_API_URL: http://api:8000
       AGENT_TYPE: reservation
     depends_on:
@@ -219,7 +228,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
       REDIS_URL: redis://:etredispass@redis:6379/0
       RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-ollama/qwen3:8b}
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
       DB_API_URL: http://api:8000
       AGENT_TYPE: finance
     depends_on:
@@ -237,7 +247,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
       REDIS_URL: redis://:etredispass@redis:6379/0
       RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-ollama/qwen3:8b}
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
       DB_API_URL: http://api:8000
       AGENT_TYPE: validation
     depends_on:
@@ -255,7 +266,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel
       REDIS_URL: redis://:etredispass@redis:6379/0
       RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-ollama/qwen3:8b}
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
       DB_API_URL: http://api:8000
       AGENT_TYPE: notification
     depends_on:
@@ -276,7 +288,9 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: etminio
       MINIO_SECRET_KEY: etminiopass
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000}
+      LLM_MODEL: ${LLM_MODEL:-ollama/qwen3:8b}
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
       DB_API_URL: http://api:8000
       AGENT_TYPE: itinerary
     depends_on:
@@ -316,8 +330,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
-      NEXT_PUBLIC_WS_URL: ws://localhost:8000
+      NEXT_PUBLIC_API_URL: http://${HOST_IP:-localhost}:8000
+      NEXT_PUBLIC_WS_URL: ws://${HOST_IP:-localhost}:8000
     depends_on:
       - api
 

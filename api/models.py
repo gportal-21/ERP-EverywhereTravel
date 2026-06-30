@@ -36,7 +36,10 @@ class Package(Base):
     __tablename__ = "packages"
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
     name = Column(String(255), nullable=False)
-    package_type = Column(String(20), default="PREDEFINED")
+    package_type = Column(
+        Enum("PREDEFINED", "CUSTOM", name="package_type", create_type=False),
+        default="PREDEFINED",
+    )
     destination = Column(String(255), nullable=False)
     description = Column(Text)
     base_price = Column(Numeric(12, 2), nullable=False)

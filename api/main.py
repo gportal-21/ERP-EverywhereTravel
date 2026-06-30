@@ -15,7 +15,6 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-import aio_pika
 import redis.asyncio as aioredis
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,8 +22,8 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.config import settings
-from api.database import get_db
-from api.routes import auth, clients, packages, quotations, reservations, liquidations, sagas, documents, monitoring, stats, itinerary
+from api.database import ensure_schema_compatibility, get_db
+from api.routes import auth, clients, packages, quotations, reservations, liquidations, sagas, documents, monitoring, stats, itinerary, validation_logs
 from core.event_bus.publisher import get_publisher
 from core.shared_state.redis_store import get_redis_store
 
@@ -58,6 +57,7 @@ manager = ConnectionManager()
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Iniciando Everywhere Travel API...")
+    await ensure_schema_compatibility()
     app.state.redis = await get_redis_store(settings.redis_url)
     app.state.publisher = await get_publisher(settings.rabbitmq_url)
 
@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
     logger.info("API detenida")
 
 
-async def _redis_pubsub_listener(redis_store) -> None:
+async def _redis_pubsub_listener(_redis_store) -> None:
     """Escucha Redis pub/sub y forwardea mensajes a clientes WebSocket."""
     raw_client = aioredis.from_url(settings.redis_url)
     pubsub = raw_client.pubsub()
@@ -95,9 +95,12 @@ app = FastAPI(
     redirect_slashes=False,
 )
 
+_cors_raw = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://frontend:3000")
+_cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://frontend:3000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -118,6 +121,7 @@ app.include_router(documents.router,    prefix="/api/v1/document-jobs",  tags=["
 app.include_router(monitoring.router,   prefix="/api/v1/monitoring",     tags=["monitoring"])
 app.include_router(stats.router,        prefix="/api/v1/stats",           tags=["stats"])
 app.include_router(itinerary.router,    prefix="/api/v1/itinerary",       tags=["itinerary"])
+app.include_router(validation_logs.router, prefix="/api/v1/validation-logs", tags=["validation"])
 
 
 @app.get("/health")

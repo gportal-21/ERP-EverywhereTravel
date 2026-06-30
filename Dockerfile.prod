@@ -1,0 +1,33 @@
+# Dockerfile.prod
+FROM python:3.12-slim as builder
+
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential libcairo2-dev pkg-config ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt && \
+    pip install --user --no-cache-dir "swarms==6.8.7" \
+    "litellm>=1.0.0" "loguru>=0.7.0" "termcolor>=2.3.0" \
+    "tiktoken>=0.7.0" "psutil>=5.9.0" \
+    "langchain-core>=0.3.0" "langchain-community>=0.3.0"
+
+# ─── Stage final ──────────────────────────────────────────
+FROM python:3.12-slim
+
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libcairo2 curl && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
+
+COPY . .
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+EXPOSE 8000
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

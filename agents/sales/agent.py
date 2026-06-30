@@ -26,6 +26,7 @@ from core.mcp.envelope import MCPEnvelope
 logger = logging.getLogger(__name__)
 
 DB_API_URL = os.environ.get("DB_API_URL", "http://api:8000")
+LLM_MODEL  = os.environ.get("LLM_MODEL", "ollama/qwen3:8b")
 
 
 # ── Swarms Tools (deben ser funciones síncronas) ──────────────────────────────
@@ -140,7 +141,7 @@ class SalesAgent(BaseAgent):
         self._swarm_agent = Agent(
             agent_name="sales-agent-et",
             system_prompt=self._system_prompt,
-            model_name="claude-sonnet-4-6",   # litellm → Anthropic
+            model_name=LLM_MODEL,
             max_loops=1,                        # una pasada por mensaje
             tools=[                             # herramientas nativas de Swarms
                 _tool_select_package,
@@ -226,6 +227,10 @@ class SalesAgent(BaseAgent):
         - Reintenta ante errores de red
         - asyncio.to_thread() evita bloquear el event loop
         """
+        if packages:
+            logger.info("[Sales] Paquete de catálogo encontrado; usando selección determinística")
+            return self._fallback_package_request(inquiry, packages)
+
         prompt = (
             f"Client inquiry: {json.dumps(inquiry)}\n"
             f"Available packages: {json.dumps(packages[:5])}\n"
@@ -271,15 +276,19 @@ class SalesAgent(BaseAgent):
             return self._fallback_package_request(inquiry, packages)
 
     def _fallback_package_request(self, inquiry: dict, packages: list) -> dict:
+        selected_package = packages[0] if packages else None
         return {
             "inquiry_id": str(uuid.uuid4()),
             "client_id": inquiry.get("client_id"),
-            "package_template_id": packages[0]["id"] if packages else None,
+            "package_template_id": selected_package["id"] if selected_package else None,
             "destination": inquiry.get("destination"),
             "start_date": inquiry.get("start_date"),
             "end_date": inquiry.get("end_date"),
             "traveler_count": inquiry.get("traveler_count", 1),
-            "customizations": {},
+            "customizations": {
+                "preferences": inquiry.get("preferences", []),
+                "selected_package_name": selected_package.get("name") if selected_package else None,
+            },
             "budget_range": {"min": inquiry.get("budget_min", 0), "max": inquiry.get("budget_max", 9999)},
             "priority": "NORMAL",
         }
@@ -290,6 +299,14 @@ class SalesAgent(BaseAgent):
         await self._redis.publish_realtime(
             f"client:{result.get('client_id')}",
             {"event": "quotation_ready", "data": result},
+        )
+        await self._redis.publish_realtime(
+            "system:alerts",
+            {
+                "type": "QuotationReady",
+                "message": f"Cotización {result.get('quote_id')} lista ({result.get('status')})",
+                "data": result,
+            },
         )
 
     def _days_between(self, start: str | None, end: str | None) -> int:

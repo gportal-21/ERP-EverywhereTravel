@@ -30,6 +30,7 @@ IGV_RATE       = Decimal("0.18")
 MIN_MARGIN_PCT = Decimal("15.0")
 DEFAULT_MARGIN = Decimal("20.0")
 DB_API_URL     = os.environ.get("DB_API_URL", "http://api:8000")
+LLM_MODEL      = os.environ.get("LLM_MODEL", "ollama/qwen3:8b")
 
 
 # ── Swarms Tools financieros (síncronos) ──────────────────────────────────────
@@ -169,7 +170,7 @@ class QuotationAgent(BaseAgent):
         self._swarm_agent = Agent(
             agent_name="quotation-agent-et",
             system_prompt=self._system_prompt,
-            model_name="claude-sonnet-4-6",
+            model_name=LLM_MODEL,
             max_loops=2,                # hasta 2 iteraciones para refinar si detecta anomalías
             tools=[
                 _tool_calculate_igv,
@@ -261,8 +262,8 @@ class QuotationAgent(BaseAgent):
             }]
             return line_items, base_price * traveler_count
 
-        # Paquete personalizado → swarms.Agent estima componentes con tools
-        return await self._estimate_with_swarms(request)
+        logger.info("[Quotation] Sin paquete de catálogo; usando estimación determinística por presupuesto")
+        return self._budget_fallback(request)
 
     async def _estimate_with_swarms(
         self, request: dict

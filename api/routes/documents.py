@@ -14,17 +14,17 @@ router = APIRouter()
 async def create_job(data: dict, db: AsyncSession = Depends(get_db)):
     job = DocumentJob(
         id=data.get("id", str(_uuid.uuid4())),
-        document_type=data.get("document_type", "UNKNOWN"),
+        document_type=data.get("document_type", "REPORT"),
         reference_id=data.get("reference_id"),
         reference_type=data.get("reference_type", "unknown"),
         template_data=data.get("template_data", {}),
-        status=data.get("status", "PENDING"),
+        status=data.get("status", "QUEUED"),
         document_url=data.get("document_url"),
         requested_by_agent=data.get("requested_by_agent", "unknown"),
     )
     db.add(job)
     await db.commit()
-    return {"job_id": str(job.id), "status": job.status}
+    return {"id": str(job.id), "job_id": str(job.id), "status": job.status}
 
 
 @router.patch("/{job_id}")

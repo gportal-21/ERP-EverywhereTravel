@@ -37,6 +37,8 @@ from core.mcp.envelope import MCPEnvelope
 logger = logging.getLogger(__name__)
 
 DB_API_URL    = os.environ.get("DB_API_URL", "http://api:8000")
+LLM_MODEL     = os.environ.get("LLM_MODEL", "ollama/qwen3:8b")
+ENABLE_LLM_ITINERARY = os.environ.get("ENABLE_LLM_ITINERARY", "false").lower() == "true"
 TEMPLATES_DIR = Path(__file__).parent.parent / "document" / "templates"
 BUCKET        = "everywheretravel-docs"
 
@@ -186,7 +188,7 @@ class ItineraryAgent(BaseAgent):
         self._swarm_agent = Agent(
             agent_name="itinerary-writer-et",
             system_prompt=self._system_prompt,
-            model_name="claude-sonnet-4-6",
+            model_name=LLM_MODEL,
             max_loops=1,
             tools=[
                 _tool_get_destination_info,
@@ -272,6 +274,10 @@ class ItineraryAgent(BaseAgent):
             f"and extract included services. Then write a rich, detailed itinerary. "
             f"Return ONLY valid JSON matching the specified schema."
         )
+
+        if not ENABLE_LLM_ITINERARY:
+            logger.info("[Itinerary] LLM deshabilitado para itinerario; usando fallback determinístico")
+            return self._fallback_itinerary(destination, start_date, end_date, traveler_count)
 
         try:
             raw = await asyncio.to_thread(self._swarm_agent.run, prompt)

@@ -12,8 +12,10 @@ class Settings(BaseSettings):
     minio_secret_key: str = "etminiopass"
     secret_key: str = "supersecretkey"
     environment: str = "development"
-    anthropic_api_key: str = ""
     db_api_url: str = "http://localhost:8000"
+
+    llm_model: str = "openrouter/qwen/qwen3-8b"
+    openrouter_api_key: str = ""
 
 
 settings = Settings()

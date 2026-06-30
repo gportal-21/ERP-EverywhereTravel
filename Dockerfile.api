@@ -25,10 +25,18 @@ RUN pip install --no-cache-dir --no-deps "swarms==6.8.7" && \
         "loguru>=0.7.0" \
         "termcolor>=2.3.0" \
         "tiktoken>=0.7.0" \
+        "psutil>=5.9.0" \
+        "docstring_parser>=0.16" \
+        "swarm_models>=0.1.0" \
+        "clusterops>=0.1.0" \
+        "networkx>=3.0" \
         "langchain-core>=0.3.0" \
         "langchain-community>=0.3.0" \
     || echo "[WARN] swarms install parcial — modo fallback activo"
 
 COPY . .
+
+ENV SWARM_DISABLE_TELEMETRY=true
+ENV WORKSPACE_DIR=/tmp/swarms
 
 EXPOSE 8000

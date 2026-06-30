@@ -1,3 +1,4 @@
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
@@ -14,3 +15,15 @@ class Base(DeclarativeBase):
 async def get_db() -> AsyncSession:
     async with AsyncSessionLocal() as session:
         yield session
+
+
+async def ensure_schema_compatibility() -> None:
+    """Aplica ajustes idempotentes para instalaciones ya inicializadas."""
+    statements = [
+        "ALTER TYPE document_type ADD VALUE IF NOT EXISTS 'ITINERARY'",
+        "ALTER TYPE document_type ADD VALUE IF NOT EXISTS 'RECEIPT'",
+        "ALTER TABLE liquidations ADD COLUMN IF NOT EXISTS payment_schedule JSONB DEFAULT '[]'",
+    ]
+    async with engine.begin() as conn:
+        for statement in statements:
+            await conn.execute(text(statement))

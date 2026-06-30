@@ -5,7 +5,7 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
-from api.models import Liquidation, Transaction, Reservation, Package
+from api.models import DocumentJob, Liquidation, Transaction, Reservation, Package
 
 router = APIRouter()
 
@@ -230,6 +230,28 @@ async def add_transaction(reservation_code: str, data: dict, db: AsyncSession = 
         previous_payments=previous,
     )
 
+    if receipt_url:
+        receipt_job = DocumentJob(
+            id=str(uuid.uuid4()),
+            document_type="RECEIPT",
+            reference_id=str(reservation.id),
+            reference_type="reservation",
+            template_data={
+                "transaction_id": str(tx.id),
+                "reservation_code": reservation.reservation_code,
+                "liquidation_code": liq.liquidation_code,
+                "amount": amount,
+                "method": data.get("method", "TRANSFER"),
+                "reference": tx.reference,
+                "balance": new_balance,
+            },
+            status="COMPLETE",
+            requested_by_agent=data.get("recorded_by_agent", "api-gateway"),
+            document_url=receipt_url,
+        )
+        db.add(receipt_job)
+        await db.commit()
+
     return {
         "transaction_id": str(tx.id),
         "liquidation_code": liq.liquidation_code,
@@ -307,7 +329,9 @@ async def _generate_receipt_pdf(
         content_type = "application/pdf" if pdf_bytes[:4] == b"%PDF" else "text/html"
         s3.put_object(Bucket=BUCKET, Key=key, Body=pdf_bytes, ContentType=content_type)
         url = s3.generate_presigned_url("get_object", Params={"Bucket": BUCKET, "Key": key}, ExpiresIn=604800)
-        return url
+        internal_url = f"http://{os.environ.get('MINIO_ENDPOINT','minio:9000')}"
+        public_url = os.environ.get("MINIO_PUBLIC_URL", "http://localhost:9000")
+        return url.replace(internal_url, public_url)
 
     except Exception as e:
         import logging
@@ -316,12 +340,19 @@ async def _generate_receipt_pdf(
 
 
 @router.get("/{reservation_code}/receipt")
-async def get_receipt(_reservation_code: str, db: AsyncSession = Depends(get_db)):
+async def get_receipt(reservation_code: str, db: AsyncSession = Depends(get_db)):
     """Retorna el URL del último recibo generado para una reserva."""
-    from api.models import DocumentJob
+    res = await db.execute(
+        select(Reservation).where(Reservation.reservation_code == reservation_code)
+    )
+    reservation = res.scalar_one_or_none()
+    if not reservation:
+        raise HTTPException(404, "Reserva no encontrada")
+
     result = await db.execute(
         select(DocumentJob)
         .where(
+            DocumentJob.reference_id == str(reservation.id),
             DocumentJob.document_type == "RECEIPT",
             DocumentJob.status == "COMPLETE",
         )

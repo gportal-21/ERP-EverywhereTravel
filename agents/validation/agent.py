@@ -109,6 +109,7 @@ class ValidationAgent(BaseAgent):
         # Actualizar estado de la cotización
         new_status = "VALIDATED" if overall_status == "PASS" else "REJECTED"
         validated_quote = {**quote, "status": new_status}
+        await self._update_quotation_status(quote.get("quote_id"), new_status)
 
         if blocking:
             # BLOCKING: notificar al Orchestrator para detener el flujo
@@ -197,9 +198,20 @@ class ValidationAgent(BaseAgent):
 
     async def _write_audit_log(self, result: dict) -> None:
         try:
-            await self._http.post("/api/v1/validation-logs", json=result)
+            await self._http.post("/api/v1/validation-logs/", json=result)
         except Exception as e:
             logger.warning(f"[Validation] Error escribiendo audit log: {e}")
+
+    async def _update_quotation_status(self, quote_id: str | None, status: str) -> None:
+        if not quote_id:
+            return
+        try:
+            await self._http.patch(
+                f"/api/v1/quotations/{quote_id}/status",
+                json={"status": status},
+            )
+        except Exception as e:
+            logger.warning(f"[Validation] Error actualizando cotización {quote_id}: {e}")
 
 
 if __name__ == "__main__":
