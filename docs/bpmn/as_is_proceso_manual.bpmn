@@ -1,0 +1,322 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_AsIs" targetNamespace="http://everywheretravel.internal/bpmn" exporter="bpmn-js (https://demo.bpmn.io)" exporterVersion="18.21.0">
+  <bpmn:collaboration id="Collaboration_AsIs">
+    <bpmn:participant id="Participant_AsIs" name="Everywhere Travel — AS-IS (proceso manual)" processRef="Process_AsIs" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_AsIs" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_AsIs">
+      <bpmn:lane id="Lane_Finanzas" name="Finanzas / Contabilidad">
+        <bpmn:flowNodeRef>Task_RegistrarPago</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_GenerarDocs</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Liquidar</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Cerrado</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Operaciones" name="Coordinador de Operaciones">
+        <bpmn:flowNodeRef>Gateway_Cupo</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ResolverConflicto</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Gerente" name="Jefe / Gerente de sede">
+        <bpmn:flowNodeRef>Task_Aprobar</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Vendedor" name="Vendedor (agente de ventas)">
+        <bpmn:flowNodeRef>Task_TomarNota</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_BuscarArmar</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_CalcularPrecio</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Aprobacion</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_EnviarWord</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Cambios</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AnotarReserva</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ConsultarDisp</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Cliente" name="Cliente">
+        <bpmn:flowNodeRef>Task_ClientePaga</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Start_Consulta</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:task id="Task_TomarNota" name="Tomar nota de la consulta (datos a veces incompletos)">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_BuscarArmar" name="Buscar en Excel / armar paquete a mano (llamar a proveedores)">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:incoming>Flow_CambiosSi</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_CalcularPrecio" name="Calcular precio a mano en Excel (margen + IGV, fórmulas frágiles)">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Aprobacion" name="¿Margen bajo o monto alto?" default="Flow_AprobNo">
+      <bpmn:incoming>Flow_4</bpmn:incoming>
+      <bpmn:outgoing>Flow_AprobSi</bpmn:outgoing>
+      <bpmn:outgoing>Flow_AprobNo</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_Aprobar" name="Revisar y aprobar cotización (puede quedar detenida si el gerente no está)">
+      <bpmn:incoming>Flow_AprobSi</bpmn:incoming>
+      <bpmn:outgoing>Flow_AprobOk</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_EnviarWord" name="Formatear en Word y enviar la cotización al cliente">
+      <bpmn:incoming>Flow_AprobNo</bpmn:incoming>
+      <bpmn:incoming>Flow_AprobOk</bpmn:incoming>
+      <bpmn:outgoing>Flow_5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Cambios" name="¿Cliente pide cambios?" default="Flow_CambiosNo">
+      <bpmn:incoming>Flow_5</bpmn:incoming>
+      <bpmn:outgoing>Flow_CambiosSi</bpmn:outgoing>
+      <bpmn:outgoing>Flow_CambiosNo</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="Gateway_Cupo" name="¿Cupo disponible?" default="Flow_CupoSi">
+      <bpmn:incoming>Flow_6</bpmn:incoming>
+      <bpmn:outgoing>Flow_CupoNo</bpmn:outgoing>
+      <bpmn:outgoing>Flow_CupoSi</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_AnotarReserva" name="Anotar la reserva en Excel + asignar código a mano">
+      <bpmn:incoming>Flow_CupoSi</bpmn:incoming>
+      <bpmn:incoming>Flow_ConflictoOk</bpmn:incoming>
+      <bpmn:outgoing>Flow_7</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_ClientePaga" name="Cliente paga (adelanto / saldo, cronograma verbal)">
+      <bpmn:incoming>Flow_7</bpmn:incoming>
+      <bpmn:outgoing>Flow_8</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:startEvent id="Start_Consulta" name="Cliente consulta (presencial / teléfono / WhatsApp)">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="Start_Consulta" targetRef="Task_TomarNota" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_TomarNota" targetRef="Task_BuscarArmar" />
+    <bpmn:sequenceFlow id="Flow_CambiosSi" name="Sí — rehacer cotización" sourceRef="Gateway_Cambios" targetRef="Task_BuscarArmar" />
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_BuscarArmar" targetRef="Task_CalcularPrecio" />
+    <bpmn:sequenceFlow id="Flow_4" sourceRef="Task_CalcularPrecio" targetRef="Gateway_Aprobacion" />
+    <bpmn:sequenceFlow id="Flow_AprobSi" name="Sí — requiere aprobación" sourceRef="Gateway_Aprobacion" targetRef="Task_Aprobar" />
+    <bpmn:sequenceFlow id="Flow_AprobNo" name="No" sourceRef="Gateway_Aprobacion" targetRef="Task_EnviarWord" />
+    <bpmn:sequenceFlow id="Flow_AprobOk" sourceRef="Task_Aprobar" targetRef="Task_EnviarWord" />
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="Task_EnviarWord" targetRef="Gateway_Cambios" />
+    <bpmn:sequenceFlow id="Flow_CambiosNo" name="No — acepta" sourceRef="Gateway_Cambios" targetRef="Task_ConsultarDisp" />
+    <bpmn:sequenceFlow id="Flow_6" sourceRef="Task_ConsultarDisp" targetRef="Gateway_Cupo" />
+    <bpmn:sequenceFlow id="Flow_CupoNo" name="No — conflicto / doble reserva" sourceRef="Gateway_Cupo" targetRef="Task_ResolverConflicto" />
+    <bpmn:sequenceFlow id="Flow_CupoSi" name="Sí — disponible" sourceRef="Gateway_Cupo" targetRef="Task_AnotarReserva" />
+    <bpmn:sequenceFlow id="Flow_ConflictoOk" sourceRef="Task_ResolverConflicto" targetRef="Task_AnotarReserva" />
+    <bpmn:sequenceFlow id="Flow_7" sourceRef="Task_AnotarReserva" targetRef="Task_ClientePaga" />
+    <bpmn:sequenceFlow id="Flow_8" sourceRef="Task_ClientePaga" targetRef="Task_RegistrarPago" />
+    <bpmn:task id="Task_ConsultarDisp" name="Consultar disponibilidad del cupo">
+      <bpmn:incoming>Flow_CambiosNo</bpmn:incoming>
+      <bpmn:outgoing>Flow_6</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_ResolverConflicto" name="Resolver doble reserva por teléfono (con el cliente comprometido)">
+      <bpmn:incoming>Flow_CupoNo</bpmn:incoming>
+      <bpmn:outgoing>Flow_ConflictoOk</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_RegistrarPago" name="Registrar pago en hoja de cálculo (control manual de cuotas)">
+      <bpmn:incoming>Flow_8</bpmn:incoming>
+      <bpmn:outgoing>Flow_9</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_GenerarDocs" name="Generar voucher / factura en Word (copiado manual, errores de tipeo)">
+      <bpmn:incoming>Flow_9</bpmn:incoming>
+      <bpmn:outgoing>Flow_10</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_Liquidar" name="Calcular comisión y cerrar liquidación (hoja editable, sin historial)">
+      <bpmn:incoming>Flow_10</bpmn:incoming>
+      <bpmn:outgoing>Flow_11</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="End_Cerrado" name="Venta cerrada">
+      <bpmn:incoming>Flow_11</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_9" sourceRef="Task_RegistrarPago" targetRef="Task_GenerarDocs" />
+    <bpmn:sequenceFlow id="Flow_10" sourceRef="Task_GenerarDocs" targetRef="Task_Liquidar" />
+    <bpmn:sequenceFlow id="Flow_11" sourceRef="Task_Liquidar" targetRef="End_Cerrado" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_AsIs">
+    <bpmndi:BPMNPlane id="BPMNPlane_AsIs" bpmnElement="Collaboration_AsIs">
+      <bpmndi:BPMNShape id="Participant_AsIs_di" bpmnElement="Participant_AsIs" isHorizontal="true">
+        <dc:Bounds x="150" y="60" width="2250" height="550" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Finanzas_di" bpmnElement="Lane_Finanzas" isHorizontal="true">
+        <dc:Bounds x="180" y="510" width="2220" height="100" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Operaciones_di" bpmnElement="Lane_Operaciones" isHorizontal="true">
+        <dc:Bounds x="180" y="410" width="2220" height="100" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Gerente_di" bpmnElement="Lane_Gerente" isHorizontal="true">
+        <dc:Bounds x="180" y="310" width="2220" height="100" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Vendedor_di" bpmnElement="Lane_Vendedor" isHorizontal="true">
+        <dc:Bounds x="180" y="170" width="2220" height="140" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Cliente_di" bpmnElement="Lane_Cliente" isHorizontal="true">
+        <dc:Bounds x="180" y="60" width="2220" height="110" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_TomarNota_di" bpmnElement="Task_TomarNota">
+        <dc:Bounds x="320" y="205" width="110" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BuscarArmar_di" bpmnElement="Task_BuscarArmar">
+        <dc:Bounds x="470" y="205" width="110" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_CalcularPrecio_di" bpmnElement="Task_CalcularPrecio">
+        <dc:Bounds x="620" y="205" width="110" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Aprobacion_di" bpmnElement="Gateway_Aprobacion" isMarkerVisible="true">
+        <dc:Bounds x="770" y="215" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="756" y="185" width="78" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Aprobar_di" bpmnElement="Task_Aprobar">
+        <dc:Bounds x="740" y="325" width="110" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_EnviarWord_di" bpmnElement="Task_EnviarWord">
+        <dc:Bounds x="870" y="205" width="110" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Cambios_di" bpmnElement="Gateway_Cambios" isMarkerVisible="true">
+        <dc:Bounds x="1020" y="215" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1013" y="176" width="65" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Cupo_di" bpmnElement="Gateway_Cupo" isMarkerVisible="true">
+        <dc:Bounds x="1260" y="435" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1257" y="492" width="56" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AnotarReserva_di" bpmnElement="Task_AnotarReserva">
+        <dc:Bounds x="1520" y="205" width="110" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ClientePaga_di" bpmnElement="Task_ClientePaga">
+        <dc:Bounds x="1670" y="80" width="110" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_Consulta_di" bpmnElement="Start_Consulta">
+        <dc:Bounds x="220" y="122" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="200" y="63" width="79" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ConsultarDisp_di" bpmnElement="Task_ConsultarDisp">
+        <dc:Bounds x="1155" y="205" width="110" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ResolverConflicto_di" bpmnElement="Task_ResolverConflicto">
+        <dc:Bounds x="1415" y="425" width="110" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_RegistrarPago_di" bpmnElement="Task_RegistrarPago">
+        <dc:Bounds x="1895" y="525" width="110" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_GenerarDocs_di" bpmnElement="Task_GenerarDocs">
+        <dc:Bounds x="2035" y="525" width="110" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Liquidar_di" bpmnElement="Task_Liquidar">
+        <dc:Bounds x="2175" y="525" width="110" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Cerrado_di" bpmnElement="End_Cerrado">
+        <dc:Bounds x="2325" y="542" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2309" y="585" width="69" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <di:waypoint x="256" y="140" />
+        <di:waypoint x="256" y="240" />
+        <di:waypoint x="320" y="240" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
+        <di:waypoint x="430" y="240" />
+        <di:waypoint x="470" y="240" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CambiosSi_di" bpmnElement="Flow_CambiosSi">
+        <di:waypoint x="1045" y="265" />
+        <di:waypoint x="1045" y="292" />
+        <di:waypoint x="525" y="292" />
+        <di:waypoint x="525" y="275" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="671" y="296" width="117" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3">
+        <di:waypoint x="580" y="240" />
+        <di:waypoint x="620" y="240" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_4_di" bpmnElement="Flow_4">
+        <di:waypoint x="730" y="240" />
+        <di:waypoint x="770" y="240" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AprobSi_di" bpmnElement="Flow_AprobSi">
+        <di:waypoint x="795" y="265" />
+        <di:waypoint x="795" y="325" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1056" y="276" width="68" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AprobNo_di" bpmnElement="Flow_AprobNo">
+        <di:waypoint x="820" y="240" />
+        <di:waypoint x="870" y="240" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="838" y="222" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AprobOk_di" bpmnElement="Flow_AprobOk">
+        <di:waypoint x="850" y="360" />
+        <di:waypoint x="925" y="360" />
+        <di:waypoint x="925" y="275" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_5_di" bpmnElement="Flow_5">
+        <di:waypoint x="980" y="240" />
+        <di:waypoint x="1020" y="240" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CambiosNo_di" bpmnElement="Flow_CambiosNo">
+        <di:waypoint x="1070" y="240" />
+        <di:waypoint x="1155" y="240" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1077" y="222" width="65" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_6_di" bpmnElement="Flow_6">
+        <di:waypoint x="1210" y="275" />
+        <di:waypoint x="1210" y="460" />
+        <di:waypoint x="1260" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CupoNo_di" bpmnElement="Flow_CupoNo">
+        <di:waypoint x="1310" y="460" />
+        <di:waypoint x="1415" y="460" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1306" y="466" width="108" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CupoSi_di" bpmnElement="Flow_CupoSi">
+        <di:waypoint x="1285" y="435" />
+        <di:waypoint x="1285" y="320" />
+        <di:waypoint x="1575" y="320" />
+        <di:waypoint x="1575" y="275" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1291" y="383" width="78" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ConflictoOk_di" bpmnElement="Flow_ConflictoOk">
+        <di:waypoint x="1525" y="460" />
+        <di:waypoint x="1575" y="460" />
+        <di:waypoint x="1575" y="275" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_7_di" bpmnElement="Flow_7">
+        <di:waypoint x="1575" y="205" />
+        <di:waypoint x="1575" y="180" />
+        <di:waypoint x="1725" y="180" />
+        <di:waypoint x="1725" y="150" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_8_di" bpmnElement="Flow_8">
+        <di:waypoint x="1780" y="115" />
+        <di:waypoint x="1840" y="115" />
+        <di:waypoint x="1840" y="560" />
+        <di:waypoint x="1895" y="560" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_9_di" bpmnElement="Flow_9">
+        <di:waypoint x="2005" y="560" />
+        <di:waypoint x="2035" y="560" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_10_di" bpmnElement="Flow_10">
+        <di:waypoint x="2145" y="560" />
+        <di:waypoint x="2175" y="560" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_11_di" bpmnElement="Flow_11">
+        <di:waypoint x="2285" y="560" />
+        <di:waypoint x="2325" y="560" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

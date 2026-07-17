@@ -16,3 +16,10 @@ build/
 .coverage
 htmlcov/
 .vscode/
+.venv/
+# Archivos temporales de Word/Office
+~$*
+*.tmp
+# Residuo de test runners
+frontend/test-results/
+test-results/

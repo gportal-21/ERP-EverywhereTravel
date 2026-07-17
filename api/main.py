@@ -21,9 +21,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.logging_config import configure_logging
+
+configure_logging("api")
+
 from api.config import settings
 from api.database import ensure_schema_compatibility, get_db
-from api.routes import auth, clients, packages, quotations, reservations, liquidations, sagas, documents, monitoring, stats, itinerary, validation_logs
+from api.routes import auth, clients, packages, quotations, reservations, liquidations, sagas, documents, monitoring, stats, itinerary, validation_logs, knowledge, agent_interactions
 from core.event_bus.publisher import get_publisher
 from core.shared_state.redis_store import get_redis_store
 
@@ -102,16 +106,36 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Métricas Prometheus
 Instrumentator().instrument(app).expose(app)
 
 # Routers
+#
+# Nota de seguridad: antes NINGÚN endpoint verificaba el JWT (oauth2_scheme se
+# definía pero no se usaba como dependencia en ninguna ruta) — la API entera
+# era efectivamente anónima pese a tener /auth/token. Ahora auth.get_current_user
+# protege los routers que sirven exclusivamente al dashboard autenticado.
+#
+# packages, quotations, reservations, liquidations, sagas, documents,
+# validation-logs, knowledge y agent-interactions NO se protegen aquí porque
+# también reciben tráfico interno agente→API sin JWT de usuario (ver
+# agents/*/agent.py, llamadas httpx a estas rutas). Protegerlos requiere antes
+# una estrategia de auth servicio-a-servicio (API key interna o red de
+# confianza) para no romper la comunicación entre agentes — ver
+# docs/architecture.md, sección de seguridad, para el plan de seguimiento.
+#
+# monitoring tampoco se protege: /api/v1/monitoring/health y
+# /circuit-breakers se documentan y usan como chequeo de diagnóstico PRE-auth
+# (README "Paso 3 — Verificar servicios", y scripts/demo_flow.py::scenario_system_check
+# que corre antes de client.authenticate()) — protegerlo rompería ambos.
+from api.routes.auth import get_current_user
+
 app.include_router(auth.router,         prefix="/api/v1/auth",          tags=["auth"])
-app.include_router(clients.router,      prefix="/api/v1/clients",        tags=["clients"])
+app.include_router(clients.router,      prefix="/api/v1/clients",        tags=["clients"], dependencies=[Depends(get_current_user)])
 app.include_router(packages.router,     prefix="/api/v1/packages",       tags=["packages"])
 app.include_router(quotations.router,   prefix="/api/v1/quotations",     tags=["quotations"])
 app.include_router(reservations.router, prefix="/api/v1/reservations",   tags=["reservations"])
@@ -119,9 +143,11 @@ app.include_router(liquidations.router, prefix="/api/v1/liquidations",   tags=["
 app.include_router(sagas.router,        prefix="/api/v1/sagas",          tags=["sagas"])
 app.include_router(documents.router,    prefix="/api/v1/document-jobs",  tags=["documents"])
 app.include_router(monitoring.router,   prefix="/api/v1/monitoring",     tags=["monitoring"])
-app.include_router(stats.router,        prefix="/api/v1/stats",           tags=["stats"])
-app.include_router(itinerary.router,    prefix="/api/v1/itinerary",       tags=["itinerary"])
+app.include_router(stats.router,        prefix="/api/v1/stats",           tags=["stats"], dependencies=[Depends(get_current_user)])
+app.include_router(itinerary.router,    prefix="/api/v1/itinerary",       tags=["itinerary"], dependencies=[Depends(get_current_user)])
 app.include_router(validation_logs.router, prefix="/api/v1/validation-logs", tags=["validation"])
+app.include_router(knowledge.router,    prefix="/api/v1/knowledge",       tags=["rag", "knowledge"])
+app.include_router(agent_interactions.router, prefix="/api/v1/agent-interactions", tags=["observability"])
 
 
 @app.get("/health")

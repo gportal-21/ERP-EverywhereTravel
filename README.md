@@ -22,6 +22,14 @@
 13. [Observabilidad](#observabilidad)
 14. [Estructura del Proyecto](#estructura-del-proyecto)
 
+**Documentación extendida:** [Informe maestro (mapa del índice completo)](docs/informe.md) ·
+[Resumen ejecutivo](docs/executive_summary.md) ·
+[Análisis (objetivos/requisitos/riesgos)](docs/analysis.md) ·
+[Arquitectura](docs/architecture.md) · [BPMN](docs/bpmn/escenario_a_cotizacion.bpmn) ·
+[Catálogo de herramientas](docs/tools_catalog.md) ·
+[Catálogo de prompts](docs/prompts_catalog.md) · [Seguridad y privacidad](docs/security.md) ·
+[Plan de evaluación](docs/evaluation.md) · [ROI](docs/roi.md) · [ADRs](docs/adr/README.md)
+
 ---
 
 ## Descripción del Sistema
@@ -201,16 +209,35 @@ Everywhere Travel es una agencia de viajes con múltiples sedes. Este sistema re
 ```
 Backend:        Python 3.12 + FastAPI 0.115 + SQLAlchemy 2 (async)
 Frontend:       Next.js 15 + React 18 + TailwindCSS
-Multiagente:    Anthropic Claude API (claude-sonnet-4-6)
+Multiagente:    Ollama local (qwen3:8b) vía swarms.Agent — ver nota de proveedor LLM abajo
+RAG:            PostgreSQL + pgvector, embeddings Ollama (nomic-embed-text)
 MCP:            JSON Schema Draft-07 + Pydantic v2
-Persistencia:   PostgreSQL 16 (ACID, JSONB para payloads MCP)
+Persistencia:   PostgreSQL 16 (ACID, JSONB para payloads MCP, pgvector para RAG)
 Estado caliente:Redis 7 (TTL, SETNX, pub/sub)
 Event Bus:      RabbitMQ 3.13 (topic exchange, dead-letter, priority queues)
 Documentos:     Jinja2 + WeasyPrint → PDF → MinIO (S3-compatible)
-Observabilidad: Prometheus + Grafana + structured logging (structlog)
-Contenedores:   Docker + Docker Compose (10 servicios)
+Observabilidad: Prometheus + Grafana + structured logging (structlog) + agent_interaction_logs (trazas LLM locales)
+Contenedores:   Docker + Docker Compose
 Tests:          pytest + pytest-asyncio + httpx
 ```
+
+### Nota sobre el proveedor LLM
+
+El sistema corre **100% sobre Ollama local** (`LLM_MODEL=ollama/qwen3:8b`, ver `.env.example`) a través de
+`agents/swarms_compat.py`, que expone una implementación mínima de `Agent` cuando detecta un modelo `ollama/*`
+y llama directo al endpoint HTTP `/api/generate` de Ollama, sin pasar por `swarms`/`litellm`.
+
+**Por qué Ollama y no un proveedor de pago (Anthropic/OpenAI):**
+- Costo cero por token — crítico para poder correr cientos de sagas de prueba/demo sin factura variable.
+- Latencia predecible en local, sin depender de rate limits externos durante la evaluación.
+- El volumen y la complejidad de las tareas de este dominio (clasificar, extraer, resumir JSON acotado)
+  no requieren un modelo frontier; un modelo de 8B es suficiente con schemas y validación estrictos.
+
+Esto es una decisión consciente, no una limitación oculta: la salida de cada agente se fuerza a JSON Schema
+(ver `core/mcp/validator.py` y la sección [Salidas Estructuradas](#salidas-estructuradas)) precisamente para
+compensar que un modelo local de 8B es menos confiable "razonando en libre forma" que un modelo frontier.
+El SDK `anthropic` queda declarado en `requirements.txt` como *punto de extensión* para producción real
+(cambiar `LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY`), pero no se invoca en el código por defecto.
 
 ---
 
@@ -221,9 +248,14 @@ Tests:          pytest + pytest-asyncio + httpx
 Docker >= 24.0
 Docker Compose >= 2.20
 Git
+Ollama (host) con los modelos:
+  ollama pull qwen3:8b
+  ollama pull nomic-embed-text   # embeddings para RAG
 
-# Variable de entorno obligatoria
-ANTHROPIC_API_KEY=sk-ant-...
+# Variables de entorno obligatorias (ver .env.example)
+LLM_PROVIDER=ollama
+LLM_MODEL=ollama/qwen3:8b
+OLLAMA_BASE_URL=http://localhost:11434
 ```
 
 ---
@@ -679,16 +711,31 @@ sistema-everywheretravel/
 ├── tests/
 │   ├── unit/                        # Sin dependencias externas
 │   ├── integration/                 # Requieren docker compose
-│   └── adversarial/                 # Edge cases + seguridad
+│   ├── adversarial/                 # Edge cases + seguridad
+│   └── evaluation/                  # Golden set (evaluación local de LLM)
 │
 ├── scripts/
-│   └── demo_flow.py                 # Demo end-to-end reproducible
+│   ├── demo_flow.py                 # Demo end-to-end reproducible
+│   ├── build_rag_index.py           # (Re)indexa embeddings RAG
+│   └── run_evaluation.py            # Corre el golden set + reporte
+│
+├── core/rag/                        # Embedder + fuentes de conocimiento RAG
 │
 ├── docs/
-│   ├── architecture.md              # Diagramas detallados
+│   ├── informe.md                   # Documento maestro: control de versiones + mapa del índice
+│   ├── executive_summary.md         # Resumen ejecutivo
+│   ├── analysis.md                  # Objetivos, requisitos, riesgos, inventario RAG/tools
+│   ├── bpmn/                        # Diagrama BPMN 2.0 (abrir en bpmn.io/Camunda)
+│   ├── architecture.md              # Diagramas detallados + orquestación + RAG + HITL
 │   ├── agent_contracts.md           # Contratos MCP por agente
+│   ├── tools_catalog.md             # Ficha de cada tool (Args/Returns/errores)
+│   ├── prompts_catalog.md           # Catálogo de prompts por agente
+│   ├── security.md                  # Seguridad y privacidad — estado real, sin maquillar
+│   ├── evaluation.md                # Plan de evaluación (golden set, sin LangSmith)
+│   ├── roi.md                       # Medición de éxito y ROI
 │   ├── test_cases.md                # Documentación de tests
-│   └── deployment.md                # Guía de despliegue detallada
+│   ├── deployment.md                # Guía de despliegue detallada
+│   └── adr/                         # Registro de decisiones de arquitectura (11 ADRs)
 │
 ├── docker-compose.yml               # 10 servicios orquestados
 ├── Dockerfile.api                   # Backend + WeasyPrint
@@ -701,15 +748,22 @@ sistema-everywheretravel/
 
 ## Decisiones de Arquitectura Clave
 
-| Decisión | Alternativa considerada | Razón de la elección |
-|---|---|---|
-| Topología híbrida | Malla pura | La malla complica la trazabilidad; la híbrida mantiene jerarquía con paralelismo |
-| Optimistic locking Redis | Locks de BD | Redis SETNX es O(1) y no bloquea la BD |
-| Saga pattern | 2-Phase Commit | 2PC no escala con agentes independientes; Saga es más resiliente |
-| RabbitMQ topic exchange | Kafka | RabbitMQ es suficiente para el volumen; Kafka introduce complejidad operacional innecesaria |
-| Decimal en precios | float | `float` acumula errores de punto flotante en finanzas; `Decimal` es exacto |
-| Audit log inmutable | Soft delete | Los registros contables deben ser inmutables para compliance |
-| JSON Schema Draft-07 | Solo Pydantic | Pydantic valida en Python; JSON Schema valida en cualquier lenguaje (frontend, tests) |
+Resumen rápido — el detalle completo (contexto, alternativas, consecuencias) está en
+[docs/adr/](docs/adr/README.md) como ADRs formales:
+
+| Decisión | Alternativa considerada | Razón de la elección | ADR |
+|---|---|---|---|
+| Saga + event bus | LangGraph | LangGraph asume orquestación centralizada en un proceso; los 9 agentes son contenedores independientes | [001](docs/adr/ADR-001-saga-vs-langgraph.md) |
+| Ollama local | Anthropic Claude API | Costo cero por token para correr cientos de sagas de prueba/demo | [002](docs/adr/ADR-002-ollama-vs-anthropic.md) |
+| Topología híbrida | Malla pura | La malla complica la trazabilidad; la híbrida mantiene jerarquía con paralelismo | [003](docs/adr/ADR-003-topologia-hibrida.md) |
+| Optimistic locking Redis | Locks de BD | Redis SETNX es O(1) y no bloquea la BD | [004](docs/adr/ADR-004-optimistic-locking-redis.md) |
+| RabbitMQ topic exchange | Kafka | RabbitMQ es suficiente para el volumen; Kafka introduce complejidad operacional innecesaria | [005](docs/adr/ADR-005-rabbitmq-vs-kafka.md) |
+| Decimal en precios | float | `float` acumula errores de punto flotante en finanzas; `Decimal` es exacto | [006](docs/adr/ADR-006-decimal-en-finanzas.md) |
+| Audit log inmutable | Soft delete | Los registros contables deben ser inmutables para compliance | [007](docs/adr/ADR-007-audit-log-inmutable.md) |
+| JSON Schema Draft-07 | Solo Pydantic | Pydantic valida en Python; JSON Schema valida en cualquier lenguaje (frontend, tests) | [008](docs/adr/ADR-008-doble-validacion-schema.md) |
+| RAG con pgvector | Vector store dedicado / retrievers LangChain | PostgreSQL ya es el almacén único; evita reintroducir LangChain | [009](docs/adr/ADR-009-rag-pgvector.md) |
+| Salida estructurada forzada | Solo prompt engineering | Constrained decoding de Ollama es más confiable que "Return ONLY JSON" con un modelo de 8B | [010](docs/adr/ADR-010-salida-estructurada-forzada.md) |
+| Evaluación local (golden set) | LangSmith | No requiere cuenta externa; el sistema no usa LangChain/LangGraph en su camino principal | [011](docs/adr/ADR-011-evaluacion-local-sin-langsmith.md) |
 
 ---
 

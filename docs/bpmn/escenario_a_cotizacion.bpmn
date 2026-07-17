@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Everywhere Travel - Diagrama de proceso BPMN 2.0 - Escenario A: Cotizacion de paquete
+  Abrir con: https://demo.bpmn.io | Camunda Modeler | draw.io (importar BPMN)
+  Fuente narrativa equivalente: docs/architecture.md, seccion 2 (diagrama de secuencia).
+-->
+<bpmn:definitions
+    xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+    xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+    xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+    id="Definitions_EscenarioA"
+    targetNamespace="http://everywheretravel.internal/bpmn">
+
+  <bpmn:collaboration id="Collaboration_ET">
+    <bpmn:participant id="Participant_ET" name="Everywhere Travel — Cotización (Escenario A)" processRef="Process_EscenarioA" />
+  </bpmn:collaboration>
+
+  <bpmn:process id="Process_EscenarioA" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_1">
+      <bpmn:lane id="Lane_API" name="API Gateway">
+        <bpmn:flowNodeRef>StartEvent_Inquiry</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Orchestrator" name="OrchestratorAgent">
+        <bpmn:flowNodeRef>Task_StartSaga</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_HaltSaga</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Failed</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Sales" name="SalesAgent">
+        <bpmn:flowNodeRef>Task_Sales</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Notify</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Completed</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Quotation" name="QuotationAgent">
+        <bpmn:flowNodeRef>Task_Quotation</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Validation" name="ValidationAgent">
+        <bpmn:flowNodeRef>Task_Validation</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Blocking</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+
+    <bpmn:startEvent id="StartEvent_Inquiry" name="PackageInquiry recibida (POST /api/v1/inquiries)">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:task id="Task_StartSaga" name="Iniciar Saga (Redis + Postgres) y enrutar a Sales via RabbitMQ">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:task id="Task_Sales" name="Buscar catalogo (estructurada + RAG semantica) y construir PackageRequest (LLM, schema forzado)">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:task id="Task_Quotation" name="Calcular precio (Decimal: base + margen 20% + IGV 18%) y versionar cotizacion (DRAFT)">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_4</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:task id="Task_Validation" name="Evaluar reglas R001-R012 y registrar audit log inmutable">
+      <bpmn:incoming>Flow_4</bpmn:incoming>
+      <bpmn:outgoing>Flow_5</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:exclusiveGateway id="Gateway_Blocking" name="¿Alguna regla BLOCKING?" default="Flow_Validated">
+      <bpmn:incoming>Flow_5</bpmn:incoming>
+      <bpmn:outgoing>Flow_Blocking</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Validated</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:task id="Task_HaltSaga" name="Detener saga (ValidationBlocking) y notificar al operador">
+      <bpmn:incoming>Flow_Blocking</bpmn:incoming>
+      <bpmn:outgoing>Flow_6</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:task id="Task_Notify" name="Marcar VALIDATED y publicar quotation_ready al cliente (WebSocket)">
+      <bpmn:incoming>Flow_Validated</bpmn:incoming>
+      <bpmn:outgoing>Flow_7</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:endEvent id="EndEvent_Failed" name="Saga FAILED / REQUIRES_MANUAL">
+      <bpmn:incoming>Flow_6</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:endEvent id="EndEvent_Completed" name="Saga COMPLETED">
+      <bpmn:incoming>Flow_7</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_Inquiry" targetRef="Task_StartSaga" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_StartSaga" targetRef="Task_Sales" />
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_Sales" targetRef="Task_Quotation" />
+    <bpmn:sequenceFlow id="Flow_4" sourceRef="Task_Quotation" targetRef="Task_Validation" />
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="Task_Validation" targetRef="Gateway_Blocking" />
+    <bpmn:sequenceFlow id="Flow_Blocking" name="Si — BLOCKING" sourceRef="Gateway_Blocking" targetRef="Task_HaltSaga" />
+    <bpmn:sequenceFlow id="Flow_Validated" name="No — VALIDATED" sourceRef="Gateway_Blocking" targetRef="Task_Notify" />
+    <bpmn:sequenceFlow id="Flow_6" sourceRef="Task_HaltSaga" targetRef="EndEvent_Failed" />
+    <bpmn:sequenceFlow id="Flow_7" sourceRef="Task_Notify" targetRef="EndEvent_Completed" />
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_ET">
+
+      <bpmndi:BPMNShape id="Participant_ET_di" bpmnElement="Participant_ET" isHorizontal="true">
+        <dc:Bounds x="100" y="80" width="1400" height="600" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Lane_API_di" bpmnElement="Lane_API" isHorizontal="true">
+        <dc:Bounds x="130" y="80" width="1370" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Orchestrator_di" bpmnElement="Lane_Orchestrator" isHorizontal="true">
+        <dc:Bounds x="130" y="200" width="1370" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Sales_di" bpmnElement="Lane_Sales" isHorizontal="true">
+        <dc:Bounds x="130" y="320" width="1370" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Quotation_di" bpmnElement="Lane_Quotation" isHorizontal="true">
+        <dc:Bounds x="130" y="440" width="1370" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Validation_di" bpmnElement="Lane_Validation" isHorizontal="true">
+        <dc:Bounds x="130" y="560" width="1370" height="120" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="StartEvent_Inquiry_di" bpmnElement="StartEvent_Inquiry">
+        <dc:Bounds x="180" y="122" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="150" y="90" width="120" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_StartSaga_di" bpmnElement="Task_StartSaga">
+        <dc:Bounds x="280" y="220" width="140" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Sales_di" bpmnElement="Task_Sales">
+        <dc:Bounds x="470" y="340" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Quotation_di" bpmnElement="Task_Quotation">
+        <dc:Bounds x="680" y="460" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Validation_di" bpmnElement="Task_Validation">
+        <dc:Bounds x="890" y="580" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Gateway_Blocking_di" bpmnElement="Gateway_Blocking" isMarkerVisible="true">
+        <dc:Bounds x="1090" y="595" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1070" y="652" width="90" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_HaltSaga_di" bpmnElement="Task_HaltSaga">
+        <dc:Bounds x="1180" y="220" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_Notify_di" bpmnElement="Task_Notify">
+        <dc:Bounds x="1180" y="340" width="160" height="80" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="EndEvent_Failed_di" bpmnElement="EndEvent_Failed">
+        <dc:Bounds x="1400" y="242" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1370" y="285" width="100" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="EndEvent_Completed_di" bpmnElement="EndEvent_Completed">
+        <dc:Bounds x="1400" y="362" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1375" y="405" width="90" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <di:waypoint x="198" y="158" />
+        <di:waypoint x="198" y="260" />
+        <di:waypoint x="280" y="260" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
+        <di:waypoint x="420" y="260" />
+        <di:waypoint x="445" y="260" />
+        <di:waypoint x="445" y="380" />
+        <di:waypoint x="470" y="380" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3">
+        <di:waypoint x="630" y="380" />
+        <di:waypoint x="655" y="380" />
+        <di:waypoint x="655" y="500" />
+        <di:waypoint x="680" y="500" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_4_di" bpmnElement="Flow_4">
+        <di:waypoint x="840" y="500" />
+        <di:waypoint x="865" y="500" />
+        <di:waypoint x="865" y="620" />
+        <di:waypoint x="890" y="620" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_5_di" bpmnElement="Flow_5">
+        <di:waypoint x="1050" y="620" />
+        <di:waypoint x="1090" y="620" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Blocking_di" bpmnElement="Flow_Blocking">
+        <di:waypoint x="1115" y="595" />
+        <di:waypoint x="1115" y="260" />
+        <di:waypoint x="1180" y="260" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1118" y="420" width="80" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Validated_di" bpmnElement="Flow_Validated">
+        <di:waypoint x="1140" y="620" />
+        <di:waypoint x="1160" y="620" />
+        <di:waypoint x="1160" y="380" />
+        <di:waypoint x="1180" y="380" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1162" y="490" width="90" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_6_di" bpmnElement="Flow_6">
+        <di:waypoint x="1340" y="260" />
+        <di:waypoint x="1400" y="260" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_7_di" bpmnElement="Flow_7">
+        <di:waypoint x="1340" y="380" />
+        <di:waypoint x="1400" y="380" />
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

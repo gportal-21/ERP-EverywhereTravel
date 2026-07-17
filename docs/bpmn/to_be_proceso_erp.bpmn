@@ -1,0 +1,452 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_ToBe" targetNamespace="http://everywheretravel.internal/bpmn" exporter="bpmn-js (https://demo.bpmn.io)" exporterVersion="18.21.0">
+  <bpmn:collaboration id="Collaboration_ToBe">
+    <bpmn:participant id="Participant_ToBe" name="Everywhere Travel — TO-BE (ERP multiagente)" processRef="Process_ToBe" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_ToBe" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_ToBe">
+      <bpmn:lane id="L_Cliente" name="Cliente / Vendedor (dashboard)">
+        <bpmn:flowNodeRef>Start_Inquiry</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Acepta</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Descartada</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ClientePaga</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="L_Orch" name="OrchestratorAgent">
+        <bpmn:flowNodeRef>Task_IniciarSaga</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_DetenerSaga</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ResolverConflicto</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Completar</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Completed</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="L_Sales" name="SalesAgent">
+        <bpmn:flowNodeRef>Task_Sales</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="L_Quot" name="QuotationAgent">
+        <bpmn:flowNodeRef>Task_Quotation</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="L_Valid" name="ValidationAgent">
+        <bpmn:flowNodeRef>Task_Validation</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Blocking</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="L_Res" name="ReservationAgent">
+        <bpmn:flowNodeRef>Task_BloquearDisp</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Lock</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_CrearReserva</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="L_Fin" name="FinanceAgent">
+        <bpmn:flowNodeRef>Task_Finanzas</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Saldo</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Liquidacion</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="L_Docs" name="Document / Itinerary / Notification Agent">
+        <bpmn:flowNodeRef>Task_NotificarValidated</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_NotificarDocs</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_GenerarDocs</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="L_Mon" name="MonitoringAgent (HITL)">
+        <bpmn:flowNodeRef>Task_Escalar</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Manual</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Start_Inquiry" name="Vendedor ingresa PackageInquiry (dashboard → POST /api/v1/inquiries)">
+      <bpmn:outgoing>F1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Task_IniciarSaga" name="Iniciar Saga (Redis + Postgres) y enrutar a Sales (MCP/RabbitMQ)">
+      <bpmn:incoming>F1</bpmn:incoming>
+      <bpmn:outgoing>F2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_Sales" name="Buscar catálogo (estructurada + RAG semántica) y armar PackageRequest (LLM, schema forzado)">
+      <bpmn:incoming>F2</bpmn:incoming>
+      <bpmn:outgoing>F3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_Quotation" name="Calcular precio (Decimal: base + margen 20% + IGV 18%), versionar cotización DRAFT, detectar anomalías">
+      <bpmn:incoming>F3</bpmn:incoming>
+      <bpmn:outgoing>F4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_Validation" name="Evaluar reglas R001-R012 + escribir audit log inmutable">
+      <bpmn:incoming>F4</bpmn:incoming>
+      <bpmn:outgoing>F5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Blocking" name="¿Alguna regla BLOCKING?" default="F_BlockNo">
+      <bpmn:incoming>F5</bpmn:incoming>
+      <bpmn:outgoing>F_BlockSi</bpmn:outgoing>
+      <bpmn:outgoing>F_BlockNo</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_DetenerSaga" name="Detener saga (ValidationBlocking)">
+      <bpmn:incoming>F_BlockSi</bpmn:incoming>
+      <bpmn:outgoing>F_Escala</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_NotificarValidated" name="Notificar al cliente: cotización VALIDATED (WebSocket)">
+      <bpmn:incoming>F_BlockNo</bpmn:incoming>
+      <bpmn:outgoing>F6</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Acepta" name="¿Cliente acepta la cotización?" default="F_AceptaSi">
+      <bpmn:incoming>F6</bpmn:incoming>
+      <bpmn:outgoing>F_AceptaNo</bpmn:outgoing>
+      <bpmn:outgoing>F_AceptaSi</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="End_Descartada" name="Cotización descartada">
+      <bpmn:incoming>F_AceptaNo</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Task_BloquearDisp" name="Bloquear disponibilidad atómicamente (Redis SETNX, TTL 30s)">
+      <bpmn:incoming>F_AceptaSi</bpmn:incoming>
+      <bpmn:outgoing>F7</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Lock" name="¿Lock adquirido?" default="F_LockSi">
+      <bpmn:incoming>F7</bpmn:incoming>
+      <bpmn:outgoing>F_LockNo</bpmn:outgoing>
+      <bpmn:outgoing>F_LockSi</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_ResolverConflicto" name="Resolver ConflictNotification automáticamente (evaluación estructurada)">
+      <bpmn:incoming>F_LockNo</bpmn:incoming>
+      <bpmn:outgoing>F_ConflictoOk</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_CrearReserva" name="Crear reserva (código ET-YYYYMMDD-XXXXX), persistir, publicar ReservationCreated">
+      <bpmn:incoming>F_LockSi</bpmn:incoming>
+      <bpmn:incoming>F_ConflictoOk</bpmn:incoming>
+      <bpmn:outgoing>F8</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_Finanzas" name="Generar cronograma de pago + registrar ledger + calcular comisión 8%">
+      <bpmn:incoming>F8</bpmn:incoming>
+      <bpmn:outgoing>F9</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_ClientePaga" name="Cliente paga según cronograma (PaymentEvent)">
+      <bpmn:incoming>F9</bpmn:incoming>
+      <bpmn:incoming>F_SaldoNo</bpmn:incoming>
+      <bpmn:outgoing>F10</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Saldo" name="¿Saldo = 0?" default="F_SaldoSi">
+      <bpmn:incoming>F10</bpmn:incoming>
+      <bpmn:outgoing>F_SaldoNo</bpmn:outgoing>
+      <bpmn:outgoing>F_SaldoSi</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_Completar" name="Marcar Saga COMPLETED (audit trail inmutable)">
+      <bpmn:incoming>F13</bpmn:incoming>
+      <bpmn:outgoing>F14</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="End_Completed" name="Saga COMPLETED">
+      <bpmn:incoming>F14</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="F1" sourceRef="Start_Inquiry" targetRef="Task_IniciarSaga" />
+    <bpmn:sequenceFlow id="F2" sourceRef="Task_IniciarSaga" targetRef="Task_Sales" />
+    <bpmn:sequenceFlow id="F3" sourceRef="Task_Sales" targetRef="Task_Quotation" />
+    <bpmn:sequenceFlow id="F4" sourceRef="Task_Quotation" targetRef="Task_Validation" />
+    <bpmn:sequenceFlow id="F5" sourceRef="Task_Validation" targetRef="Gateway_Blocking" />
+    <bpmn:sequenceFlow id="F_BlockSi" name="Sí — BLOCKING" sourceRef="Gateway_Blocking" targetRef="Task_DetenerSaga" />
+    <bpmn:sequenceFlow id="F_BlockNo" name="No — VALIDATED" sourceRef="Gateway_Blocking" targetRef="Task_NotificarValidated" />
+    <bpmn:sequenceFlow id="F_Escala" sourceRef="Task_DetenerSaga" targetRef="Task_Escalar" />
+    <bpmn:sequenceFlow id="F_Manual" sourceRef="Task_Escalar" targetRef="End_Manual" />
+    <bpmn:sequenceFlow id="F6" sourceRef="Task_NotificarValidated" targetRef="Gateway_Acepta" />
+    <bpmn:sequenceFlow id="F_AceptaNo" name="No" sourceRef="Gateway_Acepta" targetRef="End_Descartada" />
+    <bpmn:sequenceFlow id="F_AceptaSi" name="Sí — acepta" sourceRef="Gateway_Acepta" targetRef="Task_BloquearDisp" />
+    <bpmn:sequenceFlow id="F7" sourceRef="Task_BloquearDisp" targetRef="Gateway_Lock" />
+    <bpmn:sequenceFlow id="F_LockNo" name="No — conflicto" sourceRef="Gateway_Lock" targetRef="Task_ResolverConflicto" />
+    <bpmn:sequenceFlow id="F_LockSi" name="Sí —&#10;disponible" sourceRef="Gateway_Lock" targetRef="Task_CrearReserva" />
+    <bpmn:sequenceFlow id="F_ConflictoOk" sourceRef="Task_ResolverConflicto" targetRef="Task_CrearReserva" />
+    <bpmn:sequenceFlow id="F8" sourceRef="Task_CrearReserva" targetRef="Task_Finanzas" />
+    <bpmn:sequenceFlow id="F9" sourceRef="Task_Finanzas" targetRef="Task_ClientePaga" />
+    <bpmn:sequenceFlow id="F10" sourceRef="Task_ClientePaga" targetRef="Gateway_Saldo" />
+    <bpmn:sequenceFlow id="F_SaldoNo" name="No — saldo pendiente" sourceRef="Gateway_Saldo" targetRef="Task_ClientePaga" />
+    <bpmn:sequenceFlow id="F_SaldoSi" name="Sí — saldo 0" sourceRef="Gateway_Saldo" targetRef="Task_Liquidacion" />
+    <bpmn:sequenceFlow id="F11" sourceRef="Task_Liquidacion" targetRef="Task_GenerarDocs" />
+    <bpmn:sequenceFlow id="F12" sourceRef="Task_GenerarDocs" targetRef="Task_NotificarDocs" />
+    <bpmn:sequenceFlow id="F13" sourceRef="Task_NotificarDocs" targetRef="Task_Completar" />
+    <bpmn:sequenceFlow id="F14" sourceRef="Task_Completar" targetRef="End_Completed" />
+    <bpmn:task id="Task_NotificarDocs" name="Notificar al cliente/vendedor: documentos listos (WebSocket)">
+      <bpmn:incoming>F12</bpmn:incoming>
+      <bpmn:outgoing>F13</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_GenerarDocs" name="Generar voucher/factura/liquidación en PDF (×3 réplicas) → MinIO; itinerario opcional (RAG)">
+      <bpmn:incoming>F11</bpmn:incoming>
+      <bpmn:outgoing>F12</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_Liquidacion" name="Crear LiquidationRecord COMPLETE y disparar generación de documentos">
+      <bpmn:incoming>F_SaldoSi</bpmn:incoming>
+      <bpmn:outgoing>F11</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_Escalar" name="Escalar a operador humano (REQUIRES_MANUAL_INTERVENTION, si confidence &#60; 0.7 o BLOCKING)">
+      <bpmn:incoming>F_Escala</bpmn:incoming>
+      <bpmn:outgoing>F_Manual</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="End_Manual" name="Saga REQUIRES_MANUAL">
+      <bpmn:incoming>F_Manual</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_ToBe">
+    <bpmndi:BPMNPlane id="BPMNPlane_ToBe" bpmnElement="Collaboration_ToBe">
+      <bpmndi:BPMNShape id="Participant_ToBe_di" bpmnElement="Participant_ToBe" isHorizontal="true">
+        <dc:Bounds x="120" y="80" width="3160" height="970" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="L_Mon_di" bpmnElement="L_Mon" isHorizontal="true">
+        <dc:Bounds x="150" y="940" width="3130" height="110" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="L_Docs_di" bpmnElement="L_Docs" isHorizontal="true">
+        <dc:Bounds x="150" y="830" width="3130" height="110" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="L_Fin_di" bpmnElement="L_Fin" isHorizontal="true">
+        <dc:Bounds x="150" y="720" width="3130" height="110" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="L_Res_di" bpmnElement="L_Res" isHorizontal="true">
+        <dc:Bounds x="150" y="610" width="3130" height="110" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="L_Valid_di" bpmnElement="L_Valid" isHorizontal="true">
+        <dc:Bounds x="150" y="500" width="3130" height="110" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="L_Quot_di" bpmnElement="L_Quot" isHorizontal="true">
+        <dc:Bounds x="150" y="400" width="3130" height="100" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="L_Sales_di" bpmnElement="L_Sales" isHorizontal="true">
+        <dc:Bounds x="150" y="300" width="3130" height="100" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="L_Orch_di" bpmnElement="L_Orch" isHorizontal="true">
+        <dc:Bounds x="150" y="200" width="3130" height="100" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="L_Cliente_di" bpmnElement="L_Cliente" isHorizontal="true">
+        <dc:Bounds x="150" y="80" width="3130" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_Inquiry_di" bpmnElement="Start_Inquiry">
+        <dc:Bounds x="170" y="122" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="150" y="88" width="90" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_IniciarSaga_di" bpmnElement="Task_IniciarSaga">
+        <dc:Bounds x="250" y="218" width="150" height="64" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Sales_di" bpmnElement="Task_Sales">
+        <dc:Bounds x="440" y="318" width="170" height="64" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Quotation_di" bpmnElement="Task_Quotation">
+        <dc:Bounds x="660" y="418" width="170" height="64" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Validation_di" bpmnElement="Task_Validation">
+        <dc:Bounds x="880" y="523" width="160" height="64" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Blocking_di" bpmnElement="Gateway_Blocking" isMarkerVisible="true">
+        <dc:Bounds x="1100" y="530" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1085" y="583" width="90" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_DetenerSaga_di" bpmnElement="Task_DetenerSaga">
+        <dc:Bounds x="1010" y="218" width="150" height="64" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_NotificarValidated_di" bpmnElement="Task_NotificarValidated">
+        <dc:Bounds x="1180" y="853" width="160" height="64" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Acepta_di" bpmnElement="Gateway_Acepta" isMarkerVisible="true">
+        <dc:Bounds x="1380" y="115" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1365" y="85" width="90" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Descartada_di" bpmnElement="End_Descartada">
+        <dc:Bounds x="1470" y="122" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1455" y="90" width="70" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BloquearDisp_di" bpmnElement="Task_BloquearDisp">
+        <dc:Bounds x="1500" y="633" width="160" height="64" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Lock_di" bpmnElement="Gateway_Lock" isMarkerVisible="true">
+        <dc:Bounds x="1720" y="640" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1705" y="693" width="80" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ResolverConflicto_di" bpmnElement="Task_ResolverConflicto">
+        <dc:Bounds x="1610" y="218" width="160" height="64" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_CrearReserva_di" bpmnElement="Task_CrearReserva">
+        <dc:Bounds x="1830" y="633" width="160" height="64" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Finanzas_di" bpmnElement="Task_Finanzas">
+        <dc:Bounds x="2030" y="743" width="160" height="64" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ClientePaga_di" bpmnElement="Task_ClientePaga">
+        <dc:Bounds x="2200" y="108" width="150" height="64" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Saldo_di" bpmnElement="Gateway_Saldo" isMarkerVisible="true">
+        <dc:Bounds x="2420" y="750" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2405" y="803" width="80" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Completar_di" bpmnElement="Task_Completar">
+        <dc:Bounds x="2860" y="218" width="150" height="64" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Completed_di" bpmnElement="End_Completed">
+        <dc:Bounds x="3060" y="232" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3045" y="272" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_NotificarDocs_di" bpmnElement="Task_NotificarDocs">
+        <dc:Bounds x="2750" y="853" width="160" height="64" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_GenerarDocs_di" bpmnElement="Task_GenerarDocs">
+        <dc:Bounds x="2555" y="853" width="170" height="64" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Liquidacion_di" bpmnElement="Task_Liquidacion">
+        <dc:Bounds x="2555" y="743" width="160" height="64" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Escalar_di" bpmnElement="Task_Escalar">
+        <dc:Bounds x="1010" y="966" width="180" height="48" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Manual_di" bpmnElement="End_Manual">
+        <dc:Bounds x="1260" y="972" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1240" y="1008" width="81" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="F1_di" bpmnElement="F1">
+        <di:waypoint x="206" y="140" />
+        <di:waypoint x="206" y="250" />
+        <di:waypoint x="250" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F2_di" bpmnElement="F2">
+        <di:waypoint x="400" y="250" />
+        <di:waypoint x="420" y="250" />
+        <di:waypoint x="420" y="350" />
+        <di:waypoint x="440" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F3_di" bpmnElement="F3">
+        <di:waypoint x="610" y="350" />
+        <di:waypoint x="635" y="350" />
+        <di:waypoint x="635" y="450" />
+        <di:waypoint x="660" y="450" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F4_di" bpmnElement="F4">
+        <di:waypoint x="830" y="450" />
+        <di:waypoint x="855" y="450" />
+        <di:waypoint x="855" y="555" />
+        <di:waypoint x="880" y="555" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F5_di" bpmnElement="F5">
+        <di:waypoint x="1040" y="555" />
+        <di:waypoint x="1100" y="555" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_BlockSi_di" bpmnElement="F_BlockSi">
+        <di:waypoint x="1125" y="530" />
+        <di:waypoint x="1125" y="400" />
+        <di:waypoint x="1085" y="400" />
+        <di:waypoint x="1085" y="282" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1088" y="360" width="90" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_BlockNo_di" bpmnElement="F_BlockNo">
+        <di:waypoint x="1125" y="580" />
+        <di:waypoint x="1125" y="820" />
+        <di:waypoint x="1260" y="820" />
+        <di:waypoint x="1260" y="853" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1128" y="700" width="90" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_Escala_di" bpmnElement="F_Escala">
+        <di:waypoint x="1085" y="282" />
+        <di:waypoint x="1085" y="966" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_Manual_di" bpmnElement="F_Manual">
+        <di:waypoint x="1190" y="990" />
+        <di:waypoint x="1260" y="990" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F6_di" bpmnElement="F6">
+        <di:waypoint x="1260" y="853" />
+        <di:waypoint x="1260" y="140" />
+        <di:waypoint x="1380" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_AceptaNo_di" bpmnElement="F_AceptaNo">
+        <di:waypoint x="1430" y="140" />
+        <di:waypoint x="1470" y="140" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1443" y="122" width="20" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_AceptaSi_di" bpmnElement="F_AceptaSi">
+        <di:waypoint x="1405" y="165" />
+        <di:waypoint x="1405" y="665" />
+        <di:waypoint x="1500" y="665" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1408" y="400" width="80" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F7_di" bpmnElement="F7">
+        <di:waypoint x="1660" y="665" />
+        <di:waypoint x="1720" y="665" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_LockNo_di" bpmnElement="F_LockNo">
+        <di:waypoint x="1745" y="640" />
+        <di:waypoint x="1745" y="300" />
+        <di:waypoint x="1690" y="300" />
+        <di:waypoint x="1690" y="282" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1748" y="450" width="90" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_LockSi_di" bpmnElement="F_LockSi">
+        <di:waypoint x="1770" y="665" />
+        <di:waypoint x="1830" y="665" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1765" y="626" width="50" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_ConflictoOk_di" bpmnElement="F_ConflictoOk">
+        <di:waypoint x="1690" y="250" />
+        <di:waypoint x="1910" y="250" />
+        <di:waypoint x="1910" y="633" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F8_di" bpmnElement="F8">
+        <di:waypoint x="1990" y="665" />
+        <di:waypoint x="2010" y="665" />
+        <di:waypoint x="2010" y="775" />
+        <di:waypoint x="2030" y="775" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F9_di" bpmnElement="F9">
+        <di:waypoint x="2190" y="775" />
+        <di:waypoint x="2275" y="775" />
+        <di:waypoint x="2275" y="172" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F10_di" bpmnElement="F10">
+        <di:waypoint x="2350" y="140" />
+        <di:waypoint x="2445" y="140" />
+        <di:waypoint x="2445" y="750" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_SaldoNo_di" bpmnElement="F_SaldoNo">
+        <di:waypoint x="2420" y="775" />
+        <di:waypoint x="2275" y="775" />
+        <di:waypoint x="2275" y="172" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2281" y="526" width="58" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_SaldoSi_di" bpmnElement="F_SaldoSi">
+        <di:waypoint x="2470" y="775" />
+        <di:waypoint x="2555" y="775" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2476" y="743" width="63" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F11_di" bpmnElement="F11">
+        <di:waypoint x="2635" y="807" />
+        <di:waypoint x="2635" y="853" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F12_di" bpmnElement="F12">
+        <di:waypoint x="2725" y="885" />
+        <di:waypoint x="2750" y="885" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F13_di" bpmnElement="F13">
+        <di:waypoint x="2910" y="885" />
+        <di:waypoint x="2935" y="885" />
+        <di:waypoint x="2935" y="282" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F14_di" bpmnElement="F14">
+        <di:waypoint x="3010" y="250" />
+        <di:waypoint x="3060" y="250" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

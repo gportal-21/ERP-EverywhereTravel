@@ -47,6 +47,7 @@ class MonitoringAgent(BaseAgent):
         self._consumer.register_handler("AgentDegraded", self.handle_message)
         self._consumer.register_handler("SagaCompensate", self._handle_saga_compensate)
         self._consumer.register_handler("DocumentFailed", self._handle_doc_failure)
+        self._consumer.register_handler("ConflictResolved", self._handle_conflict_resolved)
 
     async def handle_message(self, envelope: MCPEnvelope) -> None:
         agent_id = envelope.payload.get("agent_id")
@@ -167,6 +168,26 @@ class MonitoringAgent(BaseAgent):
         await self._saga.fail_saga(saga_id, "Compensación manual solicitada")
         logger.info(f"[Monitoring] Saga compensada: {saga_id}")
 
+    async def _handle_conflict_resolved(self, envelope: MCPEnvelope) -> None:
+        """Recibe la evaluación estructurada del Orchestrator (Fase 3, ver
+        agents/orchestrator/agent.py::_handle_conflict) y ejecuta la escalación
+        humana real cuando needs_escalation=True (baja confidence del
+        conflict-validation-agent, o el conflict-monitoring-agent la pidió).
+        Antes este evento se publicaba pero no tenía handler registrado."""
+        payload = envelope.payload
+        if not payload.get("needs_escalation"):
+            logger.info(
+                f"[Monitoring] Conflicto {payload.get('entity_id')} resuelto sin escalación "
+                f"(confidence={payload.get('confidence')})"
+            )
+            return
+
+        logger.warning(
+            f"[Monitoring] Conflicto {payload.get('entity_id')} requiere escalación "
+            f"(razón={payload.get('escalation_reason')}, confidence={payload.get('confidence')})"
+        )
+        await self._escalate_to_human(payload)
+
     async def _handle_doc_failure(self, envelope: MCPEnvelope) -> None:
         job_id = envelope.payload.get("job_id")
         attempts = self._recovery_attempts.get(job_id, 0) + 1
@@ -212,6 +233,7 @@ class MonitoringAgent(BaseAgent):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    from core.logging_config import configure_logging
+    configure_logging("monitoring-agent")
     agent = MonitoringAgent()
     asyncio.run(agent.run())

@@ -27,12 +27,15 @@ import asyncio
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 import httpx
-from agents.swarms_compat import Agent, AgentRearrange, SequentialWorkflow
+from pydantic import BaseModel, Field
+from agents.swarms_compat import Agent, SequentialWorkflow
 
 from agents.base_agent import BaseAgent
 from core.mcp.envelope import MCPEnvelope
+from core.structured_output import parse_structured_output
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,25 @@ LLM_MODEL  = os.environ.get("LLM_MODEL", "ollama/qwen3:8b")
 ENABLE_INLINE_QUOTATION_PIPELINE = os.environ.get(
     "ENABLE_INLINE_QUOTATION_PIPELINE", "false"
 ).lower() == "true"
+
+# Debe coincidir con "Escalate to human review when confidence < 0.7" del
+# system_prompt.txt del Orchestrator — antes esa instrucción no tenía ningún
+# cálculo de confidence real detrás; ahora sí (ver _handle_conflict).
+HUMAN_ESCALATION_CONFIDENCE_THRESHOLD = 0.7
+
+
+class ConflictValidationOutput(BaseModel):
+    """Schema de salida forzada — Fase 3, sub-agente de integridad de datos."""
+    is_integrity_issue: bool
+    confidence: float = Field(ge=0.0, le=1.0)
+    recommendation: str
+
+
+class ConflictMonitoringOutput(BaseModel):
+    """Schema de salida forzada — Fase 3, sub-agente de impacto operativo."""
+    needs_escalation: bool
+    impact: str
+    action: str
 
 # Routing estático para eventos que siguen usando RabbitMQ
 ROUTING_TABLE = {
@@ -120,9 +142,10 @@ class OrchestratorAgent(BaseAgent):
         self._http = httpx.AsyncClient(base_url=DB_API_URL, timeout=30)
 
         # Swarms agents/workflows — se inicializan en initialize()
-        self._conflict_agent: Agent | None = None           # Fase 1
+        self._conflict_agent: Agent | None = None                # Fase 1
         self._quotation_pipeline: SequentialWorkflow | None = None  # Fase 2
-        self._conflict_rearrange: AgentRearrange | None = None      # Fase 3
+        self._conflict_validation_agent: Agent | None = None     # Fase 3
+        self._conflict_monitoring_agent: Agent | None = None     # Fase 3
 
     async def initialize(self) -> None:
         await super().initialize()
@@ -177,40 +200,40 @@ class OrchestratorAgent(BaseAgent):
             verbose=False,
         )
 
-        # ── FASE 3: AgentRearrange para routing dinámico de conflictos ───────
+        # ── FASE 3: dos sub-agentes especializados evalúan el conflicto ──────
         #
-        # Para ConflictNotification, el LLM decide si involucrar
-        # solo el agente de validación, solo el de monitoring, o ambos.
-        # El flow "validation_agent -> monitoring_agent" se evalúa dinámicamente.
+        # Ambos reciben el mismo contexto del conflicto (no se encadenan uno
+        # a otro como haría AgentRearrange por defecto — encadenar el output
+        # de texto de "validation" como input de "monitoring" no tiene sentido
+        # aquí porque son dos evaluaciones independientes del mismo hecho).
+        # Cada uno fuerza su propio JSON Schema de salida (constrained
+        # decoding en Ollama), incluyendo el campo `confidence` que el
+        # system_prompt.txt del Orchestrator promete usar para HITL
+        # (ver HUMAN_ESCALATION_CONFIDENCE_THRESHOLD y _handle_conflict).
         #
-        phase3_validation = Agent(
+        self._conflict_validation_agent = Agent(
             agent_name="conflict-validation-agent",
             system_prompt=_VALIDATION_AGENT_PROMPT,
             model_name=LLM_MODEL,
             max_loops=1,
             output_type="str",
             temperature=0.1,
+            response_schema=ConflictValidationOutput.model_json_schema(),
         )
-        phase3_monitoring = Agent(
+        self._conflict_monitoring_agent = Agent(
             agent_name="conflict-monitoring-agent",
             system_prompt=_MONITORING_AGENT_PROMPT,
             model_name=LLM_MODEL,
             max_loops=1,
             output_type="str",
             temperature=0.1,
-        )
-
-        self._conflict_rearrange = AgentRearrange(
-            name="et-conflict-router",
-            agents=[phase3_validation, phase3_monitoring],
-            flow="conflict-validation-agent -> conflict-monitoring-agent",
-            max_loops=1,
-            verbose=False,
+            response_schema=ConflictMonitoringOutput.model_json_schema(),
         )
 
         logger.info(
             "[Orchestrator] Swarms inicializado: "
-            "Fase1=ConflictAgent | Fase2=SequentialWorkflow(3 agentes) | Fase3=AgentRearrange"
+            "Fase1=ConflictAgent | Fase2=SequentialWorkflow(3 agentes) | "
+            "Fase3=ValidationAgent+MonitoringAgent (salida estructurada)"
         )
 
     def _register_handlers(self) -> None:
@@ -390,62 +413,135 @@ class OrchestratorAgent(BaseAgent):
         self._messages_processed += 1
         logger.info(f"[Orchestrator] {envelope.payload_type} → {receiver_agent}")
 
-    # ── FASE 3: ConflictNotification → AgentRearrange ────────────────────────
+    # ── FASE 3: ConflictNotification → evaluación estructurada + HITL ────────
 
     async def _handle_conflict(self, envelope: MCPEnvelope) -> None:
         """
-        FASE 3 — AgentRearrange decide dinámicamente qué agentes involucrar
-        en la resolución del conflicto (validation, monitoring, o ambos).
+        FASE 3 — Dos sub-agentes especializados evalúan el mismo conflicto de
+        forma independiente, cada uno con salida forzada a su JSON Schema:
+          - conflict-validation-agent → ¿es un problema de integridad de datos?
+            y con qué `confidence` (0-1)
+          - conflict-monitoring-agent → ¿cuál es el impacto operativo y
+            requiere escalar a un humano?
 
-        FASE 1 — Si AgentRearrange no está disponible, usa el ConflictAgent
-        directamente para una resolución simple.
+        HITL real: el system_prompt.txt del Orchestrator promete escalar a
+        revisión humana cuando confidence < 0.7 (HUMAN_ESCALATION_CONFIDENCE_THRESHOLD).
+        Antes ese umbral no tenía ningún cálculo detrás; ahora needs_escalation
+        se activa si el monitoring-agent lo pide O si confidence cae bajo el
+        umbral, y el resultado se enruta a MonitoringAgent, que ejecuta la
+        escalación real (ver agents/monitoring/agent.py::_handle_conflict_resolved).
+
+        FASE 1 — Si algún sub-agente falla, usa el ConflictAgent simple como
+        resolución de respaldo (mismo patrón de degradación del resto del sistema).
         """
         conflict = envelope.payload
         entity_id = conflict.get("entity_id", "unknown")
         logger.warning(f"[Orchestrator/Fase3] CONFLICTO en {entity_id} | agentes={conflict.get('agents')}")
 
-        resolution_data = {}
+        validation_result = await self._assess_conflict_integrity(conflict, saga_id=envelope.saga_id)
+        monitoring_result = await self._assess_conflict_impact(conflict, saga_id=envelope.saga_id)
 
-        if self._conflict_rearrange:
-            # FASE 3: AgentRearrange coordina validation + monitoring dinámicamente
-            try:
-                conflict_prompt = (
-                    f"Conflict detected:\n{json.dumps(conflict, indent=2)}\n\n"
-                    "Analyze this conflict: first check data integrity, "
-                    "then assess operational impact and escalation need."
-                )
-                raw = await asyncio.to_thread(
-                    self._conflict_rearrange.run, conflict_prompt
-                )
-                resolution_data = self._parse_rearrange_output(raw)
-                logger.info(
-                    f"[Orchestrator/Fase3] AgentRearrange completado | "
-                    f"escalate={resolution_data.get('needs_escalation')} "
-                    f"impact={resolution_data.get('impact')}"
-                )
-            except Exception as e:
-                logger.warning(f"[Orchestrator/Fase3] AgentRearrange falló ({type(e).__name__})")
-
-        if not resolution_data and self._conflict_agent:
-            # FASE 1: Fallback al agente de resolución simple
+        if validation_result is None and monitoring_result is None:
+            # Ambos sub-agentes fallaron (Ollama caído, etc.) — fallback Fase 1
             resolution_text = await self._resolve_with_conflict_agent(conflict)
-            resolution_data = {"resolution": resolution_text, "action": "retry", "priority": "medium"}
+            await self.publish(
+                payload_type="ConflictResolved",
+                payload={
+                    "entity_id": entity_id,
+                    "resolution": resolution_text,
+                    "action": "escalate",
+                    "impact": "unknown",
+                    "confidence": 0.0,
+                    "needs_escalation": True,  # sin evaluación estructurada, se prefiere escalar
+                    "resolved_by": f"{self.agent_id}:fallback-conflict-agent",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+                receiver_agent="monitoring-agent",
+                routing_key="monitoring.conflict_resolved",
+                saga_id=envelope.saga_id,
+            )
+            return
+
+        confidence = validation_result.confidence if validation_result else 0.0
+        low_confidence = confidence < HUMAN_ESCALATION_CONFIDENCE_THRESHOLD
+        needs_escalation = bool(monitoring_result and monitoring_result.needs_escalation) or low_confidence
+
+        logger.info(
+            f"[Orchestrator/Fase3] Evaluación completada | confidence={confidence:.2f} "
+            f"low_confidence={low_confidence} needs_escalation={needs_escalation}"
+        )
 
         await self.publish(
             payload_type="ConflictResolved",
             payload={
                 "entity_id": entity_id,
-                "resolution": resolution_data.get("resolution", "Manual review required"),
-                "action": resolution_data.get("action", "escalate"),
-                "impact": resolution_data.get("impact", "unknown"),
-                "needs_escalation": resolution_data.get("needs_escalation", False),
-                "resolved_by": f"{self.agent_id}:swarms-rearrange",
+                "resolution": (validation_result.recommendation if validation_result else "Manual review required"),
+                "action": (monitoring_result.action if monitoring_result else "escalate"),
+                "impact": (monitoring_result.impact if monitoring_result else "unknown"),
+                "confidence": confidence,
+                "needs_escalation": needs_escalation,
+                "escalation_reason": "low_confidence" if (low_confidence and not (monitoring_result and monitoring_result.needs_escalation)) else "monitoring_agent",
+                "resolved_by": f"{self.agent_id}:structured-conflict-assessment",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
             receiver_agent="monitoring-agent",
             routing_key="monitoring.conflict_resolved",
             saga_id=envelope.saga_id,
         )
+
+    async def _assess_conflict_integrity(self, conflict: dict, saga_id: str | None = None) -> ConflictValidationOutput | None:
+        if not self._conflict_validation_agent:
+            return None
+        start = time.perf_counter()
+        try:
+            prompt = (
+                f"Conflict detected:\n{json.dumps(conflict, indent=2)}\n\n"
+                "Assess whether this is a data integrity issue and how confident you are."
+            )
+            raw = await asyncio.to_thread(self._conflict_validation_agent.run, prompt)
+            result = parse_structured_output(raw, ConflictValidationOutput)
+            await self.report_llm_interaction(
+                "assess_conflict_integrity", input_data=conflict,
+                output_data=result.model_dump() if result else None,
+                duration_ms=int((time.perf_counter() - start) * 1000),
+                success=result is not None, saga_id=saga_id,
+            )
+            return result
+        except Exception as e:
+            logger.warning(f"[Orchestrator/Fase3] conflict-validation-agent falló: {e}")
+            await self.report_llm_interaction(
+                "assess_conflict_integrity", input_data=conflict,
+                duration_ms=int((time.perf_counter() - start) * 1000),
+                success=False, error=str(e), saga_id=saga_id,
+            )
+            return None
+
+    async def _assess_conflict_impact(self, conflict: dict, saga_id: str | None = None) -> ConflictMonitoringOutput | None:
+        if not self._conflict_monitoring_agent:
+            return None
+        start = time.perf_counter()
+        try:
+            prompt = (
+                f"Conflict detected:\n{json.dumps(conflict, indent=2)}\n\n"
+                "Assess the operational impact and decide if escalation to a human is needed."
+            )
+            raw = await asyncio.to_thread(self._conflict_monitoring_agent.run, prompt)
+            result = parse_structured_output(raw, ConflictMonitoringOutput)
+            await self.report_llm_interaction(
+                "assess_conflict_impact", input_data=conflict,
+                output_data=result.model_dump() if result else None,
+                duration_ms=int((time.perf_counter() - start) * 1000),
+                success=result is not None, saga_id=saga_id,
+            )
+            return result
+        except Exception as e:
+            logger.warning(f"[Orchestrator/Fase3] conflict-monitoring-agent falló: {e}")
+            await self.report_llm_interaction(
+                "assess_conflict_impact", input_data=conflict,
+                duration_ms=int((time.perf_counter() - start) * 1000),
+                success=False, error=str(e), saga_id=saga_id,
+            )
+            return None
 
     async def _resolve_with_conflict_agent(self, conflict: dict) -> str:
         """FASE 1: Resolución de conflicto con swarms.Agent simple."""
@@ -464,19 +560,6 @@ class OrchestratorAgent(BaseAgent):
             logger.warning(f"[Orchestrator/Fase1] ConflictAgent falló: {e}")
             return "Manual review required due to agent unavailability"
 
-    def _parse_rearrange_output(self, raw: str) -> dict:
-        """Extrae el resultado consolidado del AgentRearrange."""
-        result = {}
-        try:
-            for line in raw.split("\n"):
-                line = line.strip()
-                if line.startswith("{") and line.endswith("}"):
-                    partial = json.loads(line)
-                    result.update(partial)
-        except Exception:
-            pass
-        return result
-
     async def _handle_degraded_agent(self, envelope: MCPEnvelope) -> None:
         agent_id = envelope.payload.get("agent_id")
         logger.error(f"[Orchestrator] Agente degradado: {agent_id}")
@@ -487,6 +570,7 @@ class OrchestratorAgent(BaseAgent):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    from core.logging_config import configure_logging
+    configure_logging("orchestrator-agent")
     agent = OrchestratorAgent()
     asyncio.run(agent.run())

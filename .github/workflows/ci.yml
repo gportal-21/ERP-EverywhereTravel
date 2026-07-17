@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-tests:
+    name: Backend — unit, adversarial, golden set
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-cov
+
+      - name: Run unit tests
+        run: pytest tests/unit/ -v --tb=short
+
+      - name: Run adversarial tests
+        run: pytest tests/adversarial/ -v --tb=short
+
+      - name: Run golden set (evaluación local de salidas estructuradas)
+        run: python scripts/run_evaluation.py
+
+      - name: Coverage report (unit + adversarial + evaluation)
+        run: pytest tests/unit/ tests/adversarial/ tests/evaluation/ --cov=core --cov=agents --cov-report=term-missing
+
+  docker-build:
+    name: Docker build (api image)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -f Dockerfile.api -t everywheretravel-api:ci .
+
+  frontend-build:
+    name: Frontend — typecheck + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build

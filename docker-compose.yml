@@ -1,7 +1,7 @@
 services:
   # ─── Bases de datos ──────────────────────────────────────────────
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: et_postgres
     environment:
       POSTGRES_DB: everywheretravel
@@ -89,6 +89,7 @@ services:
       SECRET_KEY: supersecretkey-change-in-production
       LLM_MODEL: ${LLM_MODEL:-ollama/qwen3:8b}
       OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
       ENVIRONMENT: development
       CORS_ORIGINS: "http://localhost:3000,http://frontend:3000,http://${HOST_IP:-localhost}:3000"
     ports:
@@ -134,6 +135,8 @@ services:
       RABBITMQ_URL: amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel
       LLM_MODEL: ${LLM_MODEL:-ollama/qwen3:8b}
       OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
+      DB_API_URL: http://api:8000
       AGENT_TYPE: sales
     depends_on:
       - orchestrator
@@ -291,6 +294,7 @@ services:
       MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000}
       LLM_MODEL: ${LLM_MODEL:-ollama/qwen3:8b}
       OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
       DB_API_URL: http://api:8000
       AGENT_TYPE: itinerary
     depends_on:
@@ -308,6 +312,7 @@ services:
       - "9090:9090"
     volumes:
       - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./infrastructure/prometheus/rules:/etc/prometheus/rules
       - prometheus_data:/prometheus
 
   grafana:
@@ -320,6 +325,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./infrastructure/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./infrastructure/grafana/datasources:/etc/grafana/provisioning/datasources
 
   # ─── Frontend ─────────────────────────────────────────────────────
   frontend:

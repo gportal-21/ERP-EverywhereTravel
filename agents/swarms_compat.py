@@ -230,11 +230,17 @@ class _OllamaAgent:
         self.tools: list[Callable] = kwargs.get("tools") or []
         self.timeout = float(os.environ.get("OLLAMA_TIMEOUT", "120"))
         self.base_url = _ollama_base_url()
+        # Salida estructurada forzada: si se pasa un JSON Schema (Pydantic
+        # .model_json_schema()), Ollama restringe el decoding para que la
+        # respuesta cumpla el schema (constrained decoding, Ollama >= 0.5),
+        # en vez de depender de "Return ONLY valid JSON" + parseo con regex.
+        self.response_schema: dict | None = kwargs.get("response_schema")
         logger.info(
-            "[swarms_compat] %s usando Ollama model=%s url=%s",
+            "[swarms_compat] %s usando Ollama model=%s url=%s structured_output=%s",
             self.agent_name,
             self.model_name,
             self.base_url,
+            bool(self.response_schema),
         )
 
     def _tool_context(self) -> str:
@@ -269,6 +275,8 @@ class _OllamaAgent:
             "stream": False,
             "options": {"temperature": self.temperature},
         }
+        if self.response_schema:
+            payload["format"] = self.response_schema
         try:
             response = httpx.post(
                 f"{self.base_url}/api/generate",
@@ -293,8 +301,11 @@ class Agent:
 
     def __init__(self, *args, **kwargs):
         model_name = kwargs.get("model_name")
+        # response_schema es una extensión propia (no existe en swarms.Agent real);
+        # solo se reenvía a _OllamaAgent, que es quien sabe pasarlo como `format`.
+        response_schema = kwargs.pop("response_schema", None)
         if _is_ollama_model(model_name):
-            self._delegate = _OllamaAgent(*args, **kwargs)
+            self._delegate = _OllamaAgent(*args, response_schema=response_schema, **kwargs)
         elif SWARMS_AVAILABLE and _SwarmsAgent is not None:
             self._delegate = _SwarmsAgent(*args, **kwargs)
         else:

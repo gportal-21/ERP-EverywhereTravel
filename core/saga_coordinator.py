@@ -22,6 +22,16 @@ logger = logging.getLogger(__name__)
 
 STALE_THRESHOLD_SECONDS = 300
 _DB_API_URL = os.environ.get("DB_API_URL", "http://api:8000")
+TERMINAL_STEPS = {
+    "pipeline_quotation_complete",
+    "validation_complete",
+    "validation_blocking",
+    "reservation_created",
+    "reservation_failed",
+    "finance_liquidation_created",
+    "document_generated",
+    "itinerary_generated",
+}
 
 
 class SagaCoordinator:
@@ -91,7 +101,7 @@ class SagaCoordinator:
 
         if status == "FAILED":
             saga["status"] = "COMPENSATING"
-        elif status == "COMPLETED" and self._all_steps_done(saga):
+        elif status == "COMPLETED" and step_name in TERMINAL_STEPS:
             saga["status"] = "COMPLETED"
             saga["completed_at"] = datetime.now(timezone.utc).isoformat()
 

@@ -14,15 +14,18 @@ import asyncio
 import json
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
 import httpx
+from pydantic import BaseModel
 from agents.swarms_compat import Agent
 
 from agents.base_agent import BaseAgent
-from core.mcp.envelope import MCPEnvelope
+from core.mcp.envelope import LineItem, MCPEnvelope
+from core.structured_output import parse_structured_output
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,11 @@ MIN_MARGIN_PCT = Decimal("15.0")
 DEFAULT_MARGIN = Decimal("20.0")
 DB_API_URL     = os.environ.get("DB_API_URL", "http://api:8000")
 LLM_MODEL      = os.environ.get("LLM_MODEL", "ollama/qwen3:8b")
+
+
+class LineItemsOutput(BaseModel):
+    """Schema de salida forzada para la estimación de paquetes personalizados."""
+    line_items: list[LineItem]
 
 
 # ── Swarms Tools financieros (síncronos) ──────────────────────────────────────
@@ -182,6 +190,7 @@ class QuotationAgent(BaseAgent):
             output_type="str",
             verbose=False,
             temperature=0.05,           # muy determinístico para cálculos financieros
+            response_schema=LineItemsOutput.model_json_schema(),  # fuerza JSON schema (Ollama constrained decoding)
         )
         logger.info("[Quotation] Swarms Agent (Fase 1) inicializado con 4 tools financieros")
 
@@ -196,7 +205,7 @@ class QuotationAgent(BaseAgent):
         logger.info(f"[Quotation] Calculando | cliente={client_id} destino={request.get('destination')}")
 
         package_data = await self._fetch_package(request.get("package_template_id"))
-        line_items, base_cost = await self._calculate_line_items(request, package_data)
+        line_items, base_cost = await self._calculate_line_items(request, package_data, saga_id=envelope.saga_id)
 
         margin_pct = DEFAULT_MARGIN
         margin = (base_cost * margin_pct / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -248,7 +257,7 @@ class QuotationAgent(BaseAgent):
         return {}
 
     async def _calculate_line_items(
-        self, request: dict, package: dict
+        self, request: dict, package: dict, saga_id: str | None = None
     ) -> tuple[list[dict], Decimal]:
         traveler_count = request.get("traveler_count", 1)
         base_price = Decimal(str(package.get("base_price", 0)))
@@ -262,11 +271,11 @@ class QuotationAgent(BaseAgent):
             }]
             return line_items, base_price * traveler_count
 
-        logger.info("[Quotation] Sin paquete de catálogo; usando estimación determinística por presupuesto")
-        return self._budget_fallback(request)
+        logger.info("[Quotation] Sin paquete de catálogo; estimando componentes con LLM (paquete personalizado)")
+        return await self._estimate_with_swarms(request, saga_id=saga_id)
 
     async def _estimate_with_swarms(
-        self, request: dict
+        self, request: dict, saga_id: str | None = None
     ) -> tuple[list[dict], Decimal]:
         """
         FASE 1 — El Agent de Swarms usa _tool_estimate_component_price para
@@ -282,33 +291,37 @@ class QuotationAgent(BaseAgent):
             "Use _tool_estimate_component_price for each needed component "
             "(flight, hotel, transfer, activities). "
             "Use _tool_check_margin_policy to validate 20% margin. "
-            "Return ONLY a JSON array of line_items with keys: "
-            "concept, unit_price, quantity, subtotal."
+            "Return a JSON object with a single key 'line_items': an array of "
+            "items with keys concept, unit_price, quantity, subtotal."
         )
+        start = time.perf_counter()
         try:
             raw = await asyncio.to_thread(self._swarm_agent.run, prompt)
-            return self._parse_line_items(raw, request)
+            items, base_cost = self._parse_line_items(raw, request)
+            await self.report_llm_interaction(
+                "estimate_line_items", input_data=request,
+                output_data={"line_items": items, "base_cost": float(base_cost)},
+                duration_ms=int((time.perf_counter() - start) * 1000),
+                success=True, saga_id=saga_id,
+            )
+            return items, base_cost
         except Exception as e:
             logger.warning(f"[Quotation] Swarms Agent falló ({type(e).__name__}), usando estimación por presupuesto")
+            await self.report_llm_interaction(
+                "estimate_line_items", input_data=request,
+                duration_ms=int((time.perf_counter() - start) * 1000),
+                success=False, error=str(e), saga_id=saga_id,
+            )
             return self._budget_fallback(request)
 
     def _parse_line_items(self, raw: str, request: dict) -> tuple[list[dict], Decimal]:
-        try:
-            text = raw.strip()
-            if "```" in text:
-                for block in reversed(text.split("```")):
-                    cleaned = block.lstrip("json").strip()
-                    if cleaned.startswith("["):
-                        text = cleaned
-                        break
-            elif "[" in text:
-                text = text[text.rfind("["):text.rfind("]") + 1]
-
-            items = json.loads(text)
-            base_cost = Decimal(str(sum(float(i["subtotal"]) for i in items)))
-            return items, base_cost
-        except Exception:
+        parsed = parse_structured_output(raw, LineItemsOutput)
+        if parsed is None or not parsed.line_items:
+            logger.warning("[Quotation] Salida del LLM no validó contra LineItemsOutput, usando estimación por presupuesto")
             return self._budget_fallback(request)
+        items = [item.model_dump() for item in parsed.line_items]
+        base_cost = Decimal(str(sum(float(i["subtotal"]) for i in items)))
+        return items, base_cost
 
     def _budget_fallback(self, request: dict) -> tuple[list[dict], Decimal]:
         budget = Decimal(str(request.get("budget_range", {}).get("max", 1000)))
@@ -358,6 +371,7 @@ class QuotationAgent(BaseAgent):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    from core.logging_config import configure_logging
+    configure_logging("quotation-agent")
     agent = QuotationAgent()
     asyncio.run(agent.run())

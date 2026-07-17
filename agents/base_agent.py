@@ -18,6 +18,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 
 import aio_pika
+import httpx
 
 from core.circuit_breaker import CircuitBreaker
 from core.event_bus.consumer import BaseConsumer
@@ -50,6 +51,11 @@ class BaseAgent(ABC):
         self._running = False
         self._messages_processed = 0
         self._errors_last_minute = 0
+        # Cliente dedicado para reportar trazas LLM a agent_interaction_logs +
+        # métricas Prometheus del proceso API (ver report_llm_interaction()).
+        self._metrics_http = httpx.AsyncClient(
+            base_url=os.environ.get("DB_API_URL", "http://api:8000"), timeout=10
+        )
 
     async def initialize(self) -> None:
         redis_url = os.environ["REDIS_URL"]
@@ -112,6 +118,36 @@ class BaseAgent(ABC):
         )
         await self._publisher.publish(envelope, routing_key)
 
+    async def report_llm_interaction(
+        self,
+        action: str,
+        *,
+        input_data: dict | None = None,
+        output_data: dict | None = None,
+        duration_ms: int | None = None,
+        success: bool = True,
+        error: str | None = None,
+        saga_id: str | None = None,
+        tokens_used: int | None = None,
+    ) -> None:
+        """Reporta una interacción LLM a agent_interaction_logs + métricas
+        Prometheus (ver api/routes/agent_interactions.py). Best-effort: nunca
+        interrumpe el flujo del agente si la API no responde."""
+        try:
+            await self._metrics_http.post("/api/v1/agent-interactions", json={
+                "saga_id": saga_id,
+                "agent_id": self.agent_id,
+                "action": action,
+                "input_schema": input_data,
+                "output_schema": output_data,
+                "duration_ms": duration_ms,
+                "tokens_used": tokens_used,
+                "success": success,
+                "error_message": error,
+            })
+        except Exception as e:
+            logger.debug(f"[{self.agent_id}] No se pudo reportar interacción LLM: {e}")
+
     async def _send_heartbeat(self) -> None:
         while self._running:
             await self._redis.update_heartbeat(
@@ -144,4 +180,5 @@ class BaseAgent(ABC):
         self._running = False
         if self._consumer:
             await self._consumer.stop()
+        await self._metrics_http.aclose()
         logger.info(f"[{self.agent_id}] Detenido")

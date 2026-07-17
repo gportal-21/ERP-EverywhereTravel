@@ -2,19 +2,27 @@ export const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export const WS = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
 
 export function authHeaders(): Record<string, string> {
-  const token = typeof window !== "undefined" ? localStorage.getItem("et_token") : null;
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("et_token") : null;
   const h: Record<string, string> = { "Content-Type": "application/json" };
   if (token) h["Authorization"] = `Bearer ${token}`;
   return h;
 }
 
-export function fmt(d: string) {
+export function fmt(d?: string | null) {
   return d
-    ? new Date(d).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" })
+    ? new Date(d).toLocaleDateString("es-PE", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
     : "—";
 }
 
-export async function fetchJson<T>(url: string, init?: RequestInit): Promise<{ data: T | null; error: string | null; status?: number }> {
+export async function fetchJson<T>(
+  url: string,
+  init?: RequestInit,
+): Promise<{ data: T | null; error: string | null; status?: number }> {
   try {
     const res = await fetch(url, init);
     const body = await res.json().catch(() => null);

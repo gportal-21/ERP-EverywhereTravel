@@ -244,6 +244,7 @@ class FinanceAgent(BaseAgent):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    from core.logging_config import configure_logging
+    configure_logging("finance-agent")
     agent = FinanceAgent()
     asyncio.run(agent.run())

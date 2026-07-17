@@ -1,0 +1,56 @@
+groups:
+  - name: everywheretravel-agents
+    rules:
+      - alert: CircuitBreakerOpen
+        expr: et_circuit_breaker_state == 2
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit breaker abierto para {{ $labels.service }}"
+          description: "El circuit breaker de {{ $labels.service }} lleva abierto más de 1 minuto — las llamadas downstream se están rechazando sin reintentar."
+
+      - alert: DeadLetterQueueGrowing
+        expr: et_dead_letter_queue_size > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Dead-letter queue con {{ $value }} mensajes"
+          description: "Más de 10 mensajes en la dead-letter queue durante 2 minutos — revisar logs de MonitoringAgent y del agente destino."
+
+      - alert: HighAgentErrorRate
+        expr: sum by (agent_id) (rate(et_agent_errors_total[5m])) > 0.5
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tasa de errores elevada en {{ $labels.agent_id }}"
+          description: "{{ $labels.agent_id }} está reportando más de 0.5 errores/seg sostenido durante 3 minutos."
+
+      - alert: SagasStuckRunning
+        expr: et_sagas_active_total > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} sagas activas simultáneas"
+          description: "Un número inusualmente alto de sagas en estado RUNNING sostenido por 5 minutos puede indicar que MonitoringAgent no está compensando sagas estancadas correctamente."
+
+      - alert: LLMCallLatencyHigh
+        expr: histogram_quantile(0.95, sum by (le, agent_id) (rate(et_llm_call_duration_seconds_bucket[5m]))) > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Latencia p95 de LLM > 20s en {{ $labels.agent_id }}"
+          description: "Las llamadas al LLM (Ollama) desde {{ $labels.agent_id }} tienen p95 > 20s — verificar carga del host de Ollama."
+
+      - alert: APIDown
+        expr: up{job="et-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API Gateway no responde"
+          description: "Prometheus no puede scrapear api:8000/metrics — la API podría estar caída."

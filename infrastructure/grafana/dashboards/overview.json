@@ -1,0 +1,98 @@
+{
+  "title": "Everywhere Travel — Overview",
+  "uid": "et-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "30s",
+  "tags": ["everywheretravel", "multiagente"],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Sagas activas",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "et-prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "targets": [{ "expr": "et_sagas_active_total", "legendFormat": "activas" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }] } }, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "title": "Dead-letter queue size",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "et-prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "targets": [{ "expr": "et_dead_letter_queue_size", "legendFormat": "DLQ" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 5 }, { "color": "red", "value": 20 }] } }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "title": "Circuit breakers abiertos",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "et-prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "targets": [{ "expr": "count(et_circuit_breaker_state == 2)", "legendFormat": "OPEN" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "title": "Tokens LLM (total acumulado)",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "et-prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "targets": [{ "expr": "sum(et_llm_tokens_total)", "legendFormat": "tokens" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "title": "Mensajes procesados por agente (tasa/5m)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "et-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [{ "expr": "sum by (agent_id) (rate(et_agent_messages_total[5m]))", "legendFormat": "{{agent_id}}" }]
+    },
+    {
+      "id": 6,
+      "title": "Errores por agente (tasa/5m)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "et-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [{ "expr": "sum by (agent_id) (rate(et_agent_errors_total[5m]))", "legendFormat": "{{agent_id}}" }]
+    },
+    {
+      "id": 7,
+      "title": "Latencia p95 de llamadas LLM por agente",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "et-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le, agent_id) (rate(et_llm_call_duration_seconds_bucket[5m])))", "legendFormat": "{{agent_id}}" }]
+    },
+    {
+      "id": 8,
+      "title": "Estado de circuit breakers",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "et-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "targets": [{ "expr": "et_circuit_breaker_state", "legendFormat": "{{service}}" }],
+      "fieldConfig": { "defaults": { "custom": { "lineInterpolation": "stepAfter" } }, "overrides": [] }
+    },
+    {
+      "id": 9,
+      "title": "Latencia HTTP p95 por endpoint",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "et-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le, handler) (rate(http_request_duration_seconds_bucket[5m])))", "legendFormat": "{{handler}}" }]
+    },
+    {
+      "id": 10,
+      "title": "Validaciones por resultado (tasa/5m)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "et-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "targets": [{ "expr": "sum by (result) (rate(et_validations_total[5m]))", "legendFormat": "{{result}}" }]
+    }
+  ]
+}

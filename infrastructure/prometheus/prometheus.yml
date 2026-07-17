@@ -2,6 +2,21 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+rule_files:
+  - "rules/alerts.yml"
+
+# Nota: no hay Alertmanager desplegado en docker-compose.yml — las alertas se
+# evalúan y quedan visibles en Prometheus UI (/alerts) y en la API
+# (/api/v1/alerts), pero no se enrutan a Slack/email/PagerDuty todavía.
+# Conectar un Alertmanager real requiere credenciales de notificación
+# (webhook de Slack, SMTP, etc.) que este proyecto académico no tiene
+# configuradas — ver docs/architecture.md, sección de operación, para el
+# plan de seguimiento.
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ["alertmanager:9093"]
+
 scrape_configs:
   - job_name: 'et-api'
     static_configs:

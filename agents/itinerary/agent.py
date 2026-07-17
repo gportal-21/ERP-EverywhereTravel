@@ -21,6 +21,7 @@ import io
 import json
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,12 +30,39 @@ import boto3
 import httpx
 from botocore.exceptions import ClientError
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from pydantic import BaseModel
 
 from agents.base_agent import BaseAgent
 from agents.swarms_compat import Agent
 from core.mcp.envelope import MCPEnvelope
+from core.structured_output import parse_structured_output
 
 logger = logging.getLogger(__name__)
+
+
+class ItineraryDay(BaseModel):
+    day: int
+    title: str
+    morning: str
+    afternoon: str
+    evening: str
+    accommodation: str
+    meals: str
+    tip: str
+
+
+class ItineraryOutput(BaseModel):
+    """Schema de salida forzada para la redacción del itinerario."""
+    title: str
+    subtitle: str
+    destination: str
+    duration_summary: str
+    overview: str
+    days: list[ItineraryDay]
+    included_services: list[str]
+    not_included: list[str]
+    recommendations: str
+    emergency_contacts: str
 
 DB_API_URL    = os.environ.get("DB_API_URL", "http://api:8000")
 LLM_MODEL     = os.environ.get("LLM_MODEL", "ollama/qwen3:8b")
@@ -54,7 +82,39 @@ def _tool_get_destination_info(destination: str) -> str:
     Returns:
         JSON string with climate, culture, currency, timezone and tips
     """
-    # Base de conocimiento estática (en producción se conectaría a una API de viajes)
+    rag_result = _rag_destination_info(destination)
+    if rag_result is not None:
+        return rag_result
+    return _static_destination_info(destination)
+
+
+def _rag_destination_info(destination: str) -> str | None:
+    """Consulta RAG (core/rag/content.py vía destination_knowledge + pgvector).
+    Retorna None si el servicio no está disponible, para que el llamador use
+    el fallback estático — mismo patrón de degradación que el resto del sistema."""
+    try:
+        resp = httpx.get(
+            f"{DB_API_URL}/api/v1/knowledge/destinations/search",
+            params={"query": destination, "top_k": 4},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            return None
+        chunks = resp.json().get("chunks", [])
+        if not chunks:
+            return None
+        return json.dumps({
+            "destination": destination,
+            "source": "rag",
+            "knowledge": [{"title": c["title"], "content": c["content"]} for c in chunks],
+        })
+    except Exception as e:
+        logger.debug(f"[Itinerary] RAG destination info no disponible ({e}); usando fallback estático")
+        return None
+
+
+def _static_destination_info(destination: str) -> str:
+    # Fallback estático — usado solo si el RAG (Ollama/pgvector) no está disponible.
     INFO = {
         "cusco": {
             "climate": "Clima templado, 7-18°C. Temporada seca mayo-octubre. Llevar ropa en capas.",
@@ -198,6 +258,7 @@ class ItineraryAgent(BaseAgent):
             output_type="str",
             verbose=False,
             temperature=0.7,  # más creatividad para redacción de viajes
+            response_schema=ItineraryOutput.model_json_schema(),  # fuerza JSON schema (Ollama constrained decoding)
         )
         logger.info("[Itinerary] Swarms Agent inicializado con 3 tools de viaje")
 
@@ -218,7 +279,7 @@ class ItineraryAgent(BaseAgent):
         )
 
         try:
-            itinerary_data = await self._generate_itinerary(payload)
+            itinerary_data = await self._generate_itinerary(payload, saga_id=envelope.saga_id)
             pdf_url = await self._render_and_upload_pdf(
                 template_name="itinerary.html",
                 data={**itinerary_data, "generated_at": datetime.now().strftime("%d/%m/%Y %H:%M")},
@@ -254,7 +315,7 @@ class ItineraryAgent(BaseAgent):
         except Exception as e:
             logger.error(f"[Itinerary] Error generando itinerario: {e}")
 
-    async def _generate_itinerary(self, payload: dict) -> dict:
+    async def _generate_itinerary(self, payload: dict, saga_id: str | None = None) -> dict:
         """Usa swarms.Agent para redactar el itinerario completo."""
         destination   = payload.get("destination", "Destino no especificado")
         start_date    = payload.get("start_date") or payload.get("customizations", {}).get("start_date", "")
@@ -279,35 +340,34 @@ class ItineraryAgent(BaseAgent):
             logger.info("[Itinerary] LLM deshabilitado para itinerario; usando fallback determinístico")
             return self._fallback_itinerary(destination, start_date, end_date, traveler_count)
 
+        start = time.perf_counter()
         try:
             raw = await asyncio.to_thread(self._swarm_agent.run, prompt)
-            return self._parse_itinerary_json(raw, destination, start_date, end_date, traveler_count)
+            result = self._parse_itinerary_json(raw, destination, start_date, end_date, traveler_count)
+            await self.report_llm_interaction(
+                "generate_itinerary", input_data={"destination": destination, "start_date": start_date, "end_date": end_date},
+                output_data={"title": result.get("title"), "days_count": len(result.get("days", []))},
+                duration_ms=int((time.perf_counter() - start) * 1000),
+                success=True, saga_id=saga_id,
+            )
+            return result
         except Exception as e:
             logger.warning(f"[Itinerary] Swarms Agent falló ({type(e).__name__}), usando fallback")
+            await self.report_llm_interaction(
+                "generate_itinerary", input_data={"destination": destination},
+                duration_ms=int((time.perf_counter() - start) * 1000),
+                success=False, error=str(e), saga_id=saga_id,
+            )
             return self._fallback_itinerary(destination, start_date, end_date, traveler_count)
 
     def _parse_itinerary_json(
         self, raw: str, destination: str, start_date: str, end_date: str, travelers: int
     ) -> dict:
-        try:
-            text = raw.strip()
-            if "```" in text:
-                for block in reversed(text.split("```")):
-                    cleaned = block.lstrip("json").strip()
-                    if cleaned.startswith("{"):
-                        text = cleaned
-                        break
-            elif "{" in text:
-                start = text.rfind("{")
-                end   = text.rfind("}") + 1
-                text  = text[start:end]
-
-            data = json.loads(text)
-            if "days" in data:
-                return data
-        except Exception:
-            pass
-        return self._fallback_itinerary(destination, start_date, end_date, travelers)
+        parsed = parse_structured_output(raw, ItineraryOutput)
+        if parsed is None:
+            logger.warning("[Itinerary] Salida del LLM no validó contra ItineraryOutput, usando fallback determinístico")
+            return self._fallback_itinerary(destination, start_date, end_date, travelers)
+        return parsed.model_dump()
 
     def _fallback_itinerary(
         self, destination: str, start_date: str, end_date: str, travelers: int
@@ -447,6 +507,7 @@ class ItineraryAgent(BaseAgent):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    from core.logging_config import configure_logging
+    configure_logging("itinerary-agent")
     agent = ItineraryAgent()
     asyncio.run(agent.run())

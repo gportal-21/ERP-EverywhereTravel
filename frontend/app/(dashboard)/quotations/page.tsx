@@ -42,6 +42,38 @@ const STEP_LABELS: Record<string, string> = {
   route_to_validation_agent: "Enrutando al agente de validacion",
 };
 
+const STEP_THOUGHTS: Record<string, string> = {
+  route_to_sales_rabbitmq: "Orchestrator interpreta la solicitud, identifica que debe pasar por ventas y entrega el contexto al siguiente agente.",
+  sales_package_request: "Sales compara destino, fechas, presupuesto y memoria del cliente para elegir el paquete o preparar una alternativa.",
+  route_to_quotation_agent: "Orchestrator toma la decision comercial y prepara el pedido de calculo para cotizacion.",
+  "route_to_quotation-agent": "Orchestrator toma la decision comercial y prepara el pedido de calculo para cotizacion.",
+  quotation_calculated: "Quotation calcula precio base, cantidad de viajeros, margen comercial, impuestos y genera el desglose.",
+  route_to_validation_agent: "Orchestrator envia la cotizacion calculada a validacion antes de mostrarla como lista.",
+  "route_to_validation-agent": "Orchestrator envia la cotizacion calculada a validacion antes de mostrarla como lista.",
+  validation_complete: "Validation revisa reglas de negocio, limites, vigencia, margen y consistencia del total.",
+  validation_blocking: "Validation encontro una regla bloqueante y detiene el flujo para evitar una cotizacion incorrecta.",
+  pipeline_quotation_complete: "Orchestrator confirma que la cotizacion fue creada y validada por el pipeline multiagente.",
+};
+
+const EXPECTED_AGENT_FLOW = [
+  "route_to_sales_rabbitmq",
+  "sales_package_request",
+  "quotation_calculated",
+  "validation_complete",
+  "pipeline_quotation_complete",
+];
+
+function stepThought(step?: SagaStep) {
+  if (!step) return "Esperando el siguiente evento del pipeline multiagente...";
+  return STEP_THOUGHTS[step.step] || "El agente registro una accion del flujo y actualizo la bitacora operativa.";
+}
+
+function quoteIdFromSaga(saga?: SagaState | null) {
+  const ref = saga?.steps?.find(step => step.output_ref?.startsWith("quote:"))?.output_ref;
+  if (!ref) return null;
+  return ref.replace("quote:", "").split(":")[0];
+}
+
 type MainTab = "list" | "new";
 type NewTab  = "direct" | "agent";
 
@@ -59,8 +91,10 @@ interface SagaState {
   saga_type: string;
   status: string;
   steps: SagaStep[];
-  created_at: string;
+  created_at?: string;
+  updated_at?: string;
   completed_at?: string;
+  context?: any;
   error_message?: string;
 }
 
@@ -116,6 +150,8 @@ export default function QuotationsPage() {
   const [sagaId, setSagaId]       = useState<string | null>(null);
   const [saga, setSaga]           = useState<SagaState | null>(null);
   const [polling, setPolling]     = useState(false);
+  const [waitingQuote, setWaitingQuote] = useState(false);
+  const [readyQuoteId, setReadyQuoteId] = useState<string | null>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
   const [direct, setDirect] = useState({
@@ -132,10 +168,30 @@ export default function QuotationsPage() {
     setLoading(true);
     setLoadError("");
     const { data, error } = await fetchJson<{ quotations: any[] }>(`${API}/api/v1/quotations/`, { headers: authHeaders() });
-    if (data) setQuotations(Array.isArray(data.quotations) ? data.quotations : []);
+    const nextQuotations = data && Array.isArray(data.quotations) ? data.quotations : [];
+    if (data) setQuotations(nextQuotations);
     if (error) setLoadError(error);
     setLoading(false);
+    return nextQuotations;
   };
+
+  const waitForQuotation = useCallback(async (quoteId: string | null) => {
+    setWaitingQuote(true);
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const list = await load();
+      const found = quoteId
+        ? list.find((q: any) => q.quote_id === quoteId)
+        : list.find((q: any) => q.created_by_agent && q.created_by_agent !== "api-gateway-direct");
+      if (found) {
+        setReadyQuoteId(found.quote_id);
+        setWaitingQuote(false);
+        notify("Cotizacion creada por agentes y lista para revisar.");
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    setWaitingQuote(false);
+  }, [notify]);
 
   useEffect(() => {
     load();
@@ -169,11 +225,15 @@ export default function QuotationsPage() {
         if (data.status === "COMPLETED" || data.status === "FAILED" || data.status === "REQUIRES_MANUAL") {
           setPolling(false);
           if (pollRef.current) clearInterval(pollRef.current);
-          load();
+          if (data.status === "COMPLETED") {
+            waitForQuotation(quoteIdFromSaga(data));
+          } else {
+            load();
+          }
         }
       }
     } catch {}
-  }, []);
+  }, [waitForQuotation]);
 
   useEffect(() => {
     if (polling && sagaId) {
@@ -209,6 +269,8 @@ export default function QuotationsPage() {
     setSubmitting(true);
     setSaga(null);
     setSagaId(null);
+    setWaitingQuote(false);
+    setReadyQuoteId(null);
     try {
       const payload = {
         ...agent,
@@ -309,6 +371,8 @@ export default function QuotationsPage() {
     setSaga(null);
     setSagaId(null);
     setPolling(false);
+    setWaitingQuote(false);
+    setReadyQuoteId(null);
     if (pollRef.current) clearInterval(pollRef.current);
   };
 
@@ -661,7 +725,12 @@ export default function QuotationsPage() {
               {/* Agent Timeline - 3 cols */}
               <div className="lg:col-span-3 space-y-4">
                 {sagaId && saga ? (
-                  <AgentTimeline saga={saga} onViewList={() => { setMainTab("list"); resetAgent(); load(); }} />
+                  <AgentTimeline
+                    saga={saga}
+                    waitingQuote={waitingQuote}
+                    readyQuoteId={readyQuoteId}
+                    onViewList={() => { setMainTab("list"); resetAgent(); load(); }}
+                  />
                 ) : sagaId && !saga ? (
                   <div className="bg-white rounded-2xl shadow-sm ring-1 ring-gray-100 p-8 flex flex-col items-center justify-center">
                     <Loader2 size={28} className="animate-spin text-purple-500 mb-3" />
@@ -790,14 +859,28 @@ function AgentHistoryPanel({ history, loading }: { history?: AgentHistory; loadi
   );
 }
 
-function AgentTimeline({ saga, onViewList }: { saga: SagaState; onViewList: () => void }) {
+function AgentTimeline({ saga, waitingQuote, readyQuoteId, onViewList }: {
+  saga: SagaState;
+  waitingQuote: boolean;
+  readyQuoteId: string | null;
+  onViewList: () => void;
+}) {
   const isRunning = saga.status === "RUNNING";
   const isCompleted = saga.status === "COMPLETED";
   const isFailed = saga.status === "FAILED";
+  const completedSteps = saga.steps.filter(step => step.status === "COMPLETED").length;
+  const progress = isCompleted
+    ? (waitingQuote ? 92 : 100)
+    : Math.min(90, Math.max(8, Math.round((completedSteps / EXPECTED_AGENT_FLOW.length) * 100)));
+  const lastStep = saga.steps[saga.steps.length - 1];
+  const activeThought = waitingQuote
+    ? "La saga termino; estoy esperando que la cotizacion aparezca en la base de datos para mostrarla en la lista."
+    : stepThought(lastStep);
 
   const elapsed = (() => {
-    const start = new Date(saga.created_at).getTime();
+    const start = saga.created_at ? new Date(saga.created_at).getTime() : Date.now();
     const end = saga.completed_at ? new Date(saga.completed_at).getTime() : Date.now();
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return "0.0";
     return ((end - start) / 1000).toFixed(1);
   })();
 
@@ -817,7 +900,13 @@ function AgentTimeline({ saga, onViewList }: { saga: SagaState; onViewList: () =
             <span className={`font-semibold text-sm ${
               isCompleted ? "text-emerald-800" : isFailed ? "text-red-800" : "text-purple-800"
             }`}>
-              {isRunning ? "Agentes procesando..." : isCompleted ? "Cotizacion generada" : "Error en el procesamiento"}
+              {isRunning
+                ? "Agentes trabajando en la cotizacion..."
+                : waitingQuote
+                  ? "Cotizacion generada, sincronizando lista..."
+                  : isCompleted
+                    ? "Cotizacion lista"
+                    : "Error en el procesamiento"}
             </span>
           </div>
           <StatusBadge variant={isCompleted ? "success" : isFailed ? "error" : "purple"}>
@@ -825,6 +914,35 @@ function AgentTimeline({ saga, onViewList }: { saga: SagaState; onViewList: () =
           </StatusBadge>
         </div>
         <p className="text-xs text-gray-500 font-mono">Saga: {saga.saga_id.slice(0, 24)}</p>
+        <div className="mt-4">
+          <div className="flex items-center justify-between text-xs text-gray-500 mb-1.5">
+            <span>Progreso multiagente</span>
+            <span className="font-medium">{progress}%</span>
+          </div>
+          <div className="h-2.5 bg-white/80 rounded-full overflow-hidden ring-1 ring-inset ring-black/5">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                isFailed ? "bg-red-500" : isCompleted && !waitingQuote ? "bg-emerald-500" : "bg-purple-500"
+              }`}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm ring-1 ring-gray-100 p-5">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center flex-shrink-0">
+            {isRunning || waitingQuote ? <Loader2 size={16} className="animate-spin" /> : <Cpu size={16} />}
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-gray-800">Pensamiento operativo actual</h3>
+            <p className="text-xs text-gray-600 mt-1 leading-relaxed">{activeThought}</p>
+            {readyQuoteId && (
+              <p className="text-xs text-emerald-700 font-mono mt-2">quote_id: {readyQuoteId}</p>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Steps timeline */}
@@ -845,7 +963,7 @@ function AgentTimeline({ saga, onViewList }: { saga: SagaState; onViewList: () =
                 </div>
                 <div>
                   <p className="text-sm text-gray-700 font-medium">Orchestrator Agent</p>
-                  <p className="text-xs text-gray-400">Recibiendo solicitud y enrutando a los agentes...</p>
+                  <p className="text-xs text-gray-500">Recibiendo solicitud y preparando contexto para el pipeline.</p>
                 </div>
               </div>
             )}
@@ -853,7 +971,6 @@ function AgentTimeline({ saga, onViewList }: { saga: SagaState; onViewList: () =
             {saga.steps.map((step, i) => {
               const meta = AGENT_META[step.agent] || { label: step.agent, icon: Cpu, color: "text-gray-600" };
               const StepIcon = meta.icon;
-              const isLast = i === saga.steps.length - 1;
               const stepLabel = STEP_LABELS[step.step] || step.step.replace(/_/g, " ");
               const stepTime = new Date(step.timestamp).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
               const isStepOk = step.status === "COMPLETED";
@@ -880,6 +997,7 @@ function AgentTimeline({ saga, onViewList }: { saga: SagaState; onViewList: () =
                       <span className="text-xs text-gray-400">{stepTime}</span>
                     </div>
                     <p className="text-xs text-gray-500 mt-0.5">{stepLabel}</p>
+                    <p className="text-xs text-gray-600 mt-1 leading-relaxed">{stepThought(step)}</p>
                     {step.output_ref && (
                       <p className="text-xs text-gray-400 font-mono mt-0.5">ref: {step.output_ref}</p>
                     )}
@@ -905,7 +1023,20 @@ function AgentTimeline({ saga, onViewList }: { saga: SagaState; onViewList: () =
                   <Loader2 size={14} className="animate-spin text-purple-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Procesando siguiente paso...</p>
+                  <p className="text-sm text-gray-700 font-medium">Esperando siguiente agente...</p>
+                  <p className="text-xs text-gray-500">La pantalla se actualiza automaticamente cada 2 segundos.</p>
+                </div>
+              </div>
+            )}
+
+            {waitingQuote && (
+              <div className="flex items-center gap-3 py-2.5 pl-1">
+                <div className="relative z-10 w-[30px] h-[30px] rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                  <Loader2 size={14} className="animate-spin text-emerald-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-700 font-medium">Confirmando cotizacion en lista</p>
+                  <p className="text-xs text-gray-500">Los agentes ya terminaron; se esta refrescando la lista para encontrar el registro creado.</p>
                 </div>
               </div>
             )}
@@ -922,15 +1053,17 @@ function AgentTimeline({ saga, onViewList }: { saga: SagaState; onViewList: () =
             {isCompleted ? <CheckCircle size={16} className="text-emerald-600"/> : <AlertCircle size={16} className="text-red-600"/>}
             <span className={`text-sm font-medium ${isCompleted ? "text-emerald-800" : "text-red-800"}`}>
               {isCompleted
-                ? `Procesado en ${elapsed}s -- ${saga.steps.length} pasos completados`
+                ? waitingQuote
+                  ? `Procesado en ${elapsed}s -- confirmando registro de cotizacion`
+                  : `Procesado en ${elapsed}s -- ${saga.steps.length} pasos completados`
                 : saga.error_message || "Error durante el procesamiento"}
             </span>
           </div>
-          <button onClick={onViewList}
+          <button onClick={onViewList} disabled={waitingQuote}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium transition-colors ${
-              isCompleted ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-gray-600 text-white hover:bg-gray-700"
+              isCompleted ? "bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50" : "bg-gray-600 text-white hover:bg-gray-700"
             }`}>
-            Ver cotizaciones <ArrowRight size={12}/>
+            {waitingQuote ? "Esperando..." : "Ver cotizaciones"} <ArrowRight size={12}/>
           </button>
         </div>
       )}

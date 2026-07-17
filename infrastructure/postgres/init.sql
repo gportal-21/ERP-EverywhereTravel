@@ -2,6 +2,7 @@
 -- Extensiones
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+CREATE EXTENSION IF NOT EXISTS "vector";
 
 -- ─── Enums ──────────────────────────────────────────────────────────────────
 CREATE TYPE quotation_status AS ENUM ('DRAFT', 'VALIDATED', 'REJECTED', 'EXPIRED');
@@ -41,8 +42,14 @@ CREATE TABLE packages (
     includes JSONB DEFAULT '[]',
     excludes JSONB DEFAULT '[]',
     is_active BOOLEAN DEFAULT TRUE,
+    -- RAG: embedding del texto (name + destination + description + includes),
+    -- generado con Ollama nomic-embed-text (768 dim). NULL hasta que se indexa
+    -- (ver scripts/build_rag_index.py o el auto-embed en la creación del paquete).
+    embedding vector(768),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+-- Índice aproximado de vecinos más cercanos para búsqueda semántica (coseno)
+CREATE INDEX idx_packages_embedding ON packages USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 -- ─── Cotizaciones (versionadas, inmutables por versión) ───────────────────────
 CREATE TABLE quotations (
@@ -160,7 +167,23 @@ CREATE TABLE validation_logs (
 );
 -- Tabla inmutable: sin UPDATE ni DELETE permitidos en producción
 
--- ─── Logs de interacción de agentes ──────────────────────────────────────────
+-- ─── RAG: base de conocimiento de destinos ───────────────────────────────────
+-- Fuente de conocimiento para el subsistema RAG (ver core/rag/content.py).
+-- Reemplaza el diccionario estático que usaba ItineraryAgent con chunks
+-- recuperables por similaridad semántica (coseno) en vez de match exacto de string.
+CREATE TABLE destination_knowledge (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    destination VARCHAR(255) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    embedding vector(768),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_destination_knowledge_embedding ON destination_knowledge USING ivfflat (embedding vector_cosine_ops) WITH (lists = 50);
+CREATE INDEX idx_destination_knowledge_destination ON destination_knowledge(destination);
+
+-- ─── Trazas de interacción LLM (evaluación local sin LangSmith) ──────────────
+-- Alimenta scripts/run_evaluation.py y el golden set (tests/evaluation/).
 CREATE TABLE agent_interaction_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     saga_id UUID,

@@ -4,12 +4,15 @@
 
 | Requisito | Mínimo | Recomendado |
 |---|---|---|
-| RAM | 4 GB | 8 GB |
-| CPU | 2 cores | 4 cores |
-| Disco | 10 GB libre | 20 GB libre |
+| RAM | 8 GB (Ollama + modelo 8B) | 16 GB |
+| CPU | 4 cores | 8 cores |
+| Disco | 15 GB libre (incluye modelos Ollama) | 30 GB libre |
 | Docker | 24.0+ | última versión |
 | Docker Compose | 2.20+ | última versión |
-| ANTHROPIC_API_KEY | Requerido | — |
+| Ollama | Requerido en el host, con `qwen3:8b` y `nomic-embed-text` descargados | — |
+
+> El sistema usa **Ollama local** como proveedor LLM por defecto (`LLM_PROVIDER=ollama`), no Anthropic.
+> `ANTHROPIC_API_KEY` es opcional y solo se usa si cambias `LLM_PROVIDER=anthropic` explícitamente.
 
 ---
 
@@ -19,6 +22,12 @@
 # Verificar Docker
 docker --version
 docker compose version
+
+# Instalar y preparar Ollama en el host (no corre dentro de docker compose)
+# https://ollama.com/download
+ollama pull qwen3:8b
+ollama pull nomic-embed-text
+ollama serve   # si no está corriendo ya como servicio
 
 # Clonar el repositorio
 git clone <url-repositorio>
@@ -39,9 +48,15 @@ nano .env
 
 Contenido mínimo requerido:
 ```
-ANTHROPIC_API_KEY=sk-ant-api03-...   # ← REEMPLAZAR
+LLM_PROVIDER=ollama
+LLM_MODEL=ollama/qwen3:8b
+OLLAMA_DOCKER_BASE_URL=http://host.docker.internal:11434   # así los contenedores alcanzan Ollama del host
 SECRET_KEY=tu-clave-secreta-aqui      # ← REEMPLAZAR en producción
 ```
+
+> Si en vez de Ollama prefieres un proveedor de pago, cambia `LLM_PROVIDER=anthropic` y define
+> `ANTHROPIC_API_KEY=sk-ant-...`; el código de fallback está declarado pero no se activa salvo que
+> configures explícitamente este proveedor.
 
 ---
 
@@ -205,6 +220,19 @@ Usuario: admin
 Contraseña: etgrafana
 ```
 
+El datasource de Prometheus y el dashboard "Everywhere Travel — Overview" (sagas activas,
+DLQ, circuit breakers, latencia LLM p95, errores por agente) se provisionan
+automáticamente al arrancar (`infrastructure/grafana/datasources/`,
+`infrastructure/grafana/dashboards/`) — no requiere configuración manual.
+
+### Alertas Prometheus
+
+Reglas en `infrastructure/prometheus/rules/alerts.yml` (circuit breaker abierto, DLQ > 10,
+tasa de errores alta, sagas estancadas, latencia LLM p95 > 20s, API caída). Visibles en
+`http://localhost:9090/alerts`. **No hay Alertmanager desplegado** — las alertas se
+evalúan y muestran en la UI de Prometheus pero no se enrutan a Slack/email todavía (requiere
+credenciales de notificación que este proyecto académico no tiene configuradas).
+
 ### RabbitMQ Management
 
 ```
@@ -245,7 +273,90 @@ docker compose down -v
 
 ---
 
-## Troubleshooting
+## Entornos
+
+| Entorno | Existe | Configuración | Diferencias clave |
+|---|---|---|---|
+| **Desarrollo** | Sí (el descrito en esta guía) | `.env` (desde `.env.example`), `docker compose up`, `Dockerfile.api` con `--reload` y código montado como volumen | Logs legibles con color (ConsoleRenderer de structlog), CORS a `localhost:3000`, `SECRET_KEY` de desarrollo, cookie JWT sin flag `secure` |
+| **Producción** | Definido pero no desplegado (no hay servidor productivo para este proyecto académico) | `.env.production` + `Dockerfile.prod` (multi-stage, sin reload, healthcheck HTTP), `ENVIRONMENT=production` | Al activar `ENVIRONMENT=production`: logs en JSON (para log shipper), cookie JWT con `secure=true`; exige rotar `SECRET_KEY` y credenciales de Postgres/Redis/RabbitMQ/MinIO (los valores por defecto son de desarrollo) |
+| **Staging** | No existe | — | Decisión de alcance: con un solo evaluador/operador no aporta valor frente a su costo; el equivalente funcional es correr `scripts/demo_flow.py` completo contra el stack local antes de cualquier release |
+
+La variable `ENVIRONMENT` (`api/config.py`) es el interruptor único entre comportamientos
+de desarrollo y producción — no hay ramas de código separadas por entorno.
+
+---
+
+## Estrategias de Release
+
+El proyecto no tiene todavía un pipeline de despliegue continuo a un entorno de
+producción real (ver [ADR-002](adr/ADR-002-ollama-vs-anthropic.md) y el resto de ADRs —
+es un despliegue académico auto-alojado vía `docker compose`), pero la estrategia
+prevista para cuando exista un entorno de producción es:
+
+| Estrategia | Aplicación en este sistema |
+|---|---|
+| **Rolling update por agente** | Cada agente es un contenedor independiente (`docker-compose.yml`) — se puede actualizar `sales_worker` sin tocar `quotation_worker`. RabbitMQ retiene los mensajes mientras el contenedor se reinicia, así que un rolling restart agente-por-agente no pierde mensajes en tránsito. |
+| **Réplicas para servicios sin estado** | `document_worker` ya corre en 3 réplicas (`docker-compose.yml`) — el patrón se replica a cualquier agente si el volumen lo exige, sin cambios de código (los agentes son *stateless* entre mensajes; el estado vive en Redis/Postgres). |
+| **Migraciones de esquema** | `api/database.py::ensure_schema_compatibility()` aplica cambios idempotentes (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`) en cada arranque — compatible con rolling updates porque una versión N+1 de la API puede arrancar mientras trabajadores en versión N siguen corriendo (los campos nuevos son siempre opcionales/con default). |
+| **Feature flags ya usadas como mecanismo de release gradual** | `ENABLE_INLINE_QUOTATION_PIPELINE` y `ENABLE_LLM_ITINERARY` (`.env.example`) permiten activar código nuevo (pipeline Swarms inline, generación de itinerario vía LLM) sin desplegar una versión distinta — el mismo patrón se usaría para cualquier feature de alto riesgo antes de activarla por defecto. |
+| **Blue-green / canary** | No implementado — requeriría un balanceador delante de la API (hoy expuesta directo en `:8000`) y un segundo stack completo. Queda como trabajo futuro si el volumen de tráfico lo justifica; con el volumen actual (proyecto académico) el rolling update por contenedor es suficiente. |
+
+**Versionado:** `docker-compose.yml` no fija tags de imagen propios (usa `build: context: .`)
+— el versionado real es el historial de Git (`git tag` por release). Un pipeline de CI/CD
+real (extensión de `.github/workflows/ci.yml`) construiría y etiquetaría imágenes
+(`everywheretravel-api:v1.2.0`) en cada tag, no implementado todavía porque no hay un
+registro de contenedores (Docker Hub/GHCR) configurado para este proyecto académico.
+
+## Escalado y FinOps
+
+**Escalado horizontal ya presente:** `document_worker` corre en 3 réplicas
+(`docker-compose.yml`) porque la generación de PDF (WeasyPrint/xhtml2pdf) es la operación
+más costosa en CPU del sistema — el resto de agentes corren en 1 réplica porque su carga
+es predominantemente I/O-bound (esperando RabbitMQ/Postgres/Ollama), donde escalar
+réplicas ayuda menos que escalar el recurso compartido (Ollama, Postgres).
+
+**Cuellos de botella conocidos ante escalado:**
+| Recurso | Límite | Mitigación si el volumen crece |
+|---|---|---|
+| Ollama (LLM local) | Un solo proceso, sin balanceo | Sería el primer cuello de botella real — la extensión natural es un pool de instancias Ollama detrás de un balanceador, o migrar a `LLM_PROVIDER=anthropic` (ver [ADR-002](adr/ADR-002-ollama-vs-anthropic.md)) donde el proveedor absorbe el escalado a cambio de costo por token |
+| PostgreSQL | Instancia única | Réplicas de lectura para `packages`/`destination_knowledge` (RAG es solo lectura intensiva) antes de necesitar sharding |
+| RabbitMQ | Instancia única | Clustering nativo de RabbitMQ si el throughput de mensajes lo exige — no necesario al volumen actual |
+
+**FinOps:** con Ollama local el costo marginal por LLM es US$0 (ver
+[ADR-002](adr/ADR-002-ollama-vs-anthropic.md) y el cálculo de ROI en
+[docs/roi.md](roi.md)) — el costo de operación es esencialmente el de la infraestructura
+(cómputo + almacenamiento), no de tokens. Si el proyecto migrara a un proveedor de pago,
+`et_llm_tokens_total` (Prometheus, ya instrumentado) sería la métrica base para proyectar
+costo mensual: `costo ≈ tokens_total × precio_por_token_del_proveedor`, agrupable por
+`agent_id` para saber qué agente concentra el gasto.
+
+---
+
+## Procedimiento ante Incidentes (Runbook)
+
+### Niveles de severidad
+
+| Severidad | Ejemplo | Respuesta esperada |
+|---|---|---|
+| **Crítica** | `CircuitBreakerOpen`, `APIDown` (ver `infrastructure/prometheus/rules/alerts.yml`) | Revisar de inmediato — el sistema no puede vender/reservar |
+| **Alta** | `HighAgentErrorRate`, `DeadLetterQueueGrowing` | Revisar en el día — degradación parcial, el sistema sigue operando con fallbacks |
+| **Media** | `LLMCallLatencyHigh`, `SagasStuckRunning` | Revisar en la semana — impacto en experiencia, no en integridad de datos |
+
+### Camino de escalación
+
+1. **Alerta Prometheus dispara** (`http://localhost:9090/alerts`) → visible también en el
+   dashboard de Grafana.
+2. **Auto-recuperación primero:** `MonitoringAgent` ya reintenta automáticamente (circuit
+   breaker HALF_OPEN, requeue de dead-letter con backoff exponencial) — la mayoría de
+   incidentes de severidad Alta/Media se resuelven solos en minutos.
+3. **Si la auto-recuperación falla 3 veces:** `MonitoringAgent._escalate_to_human()`
+   publica `REQUIRES_MANUAL_INTERVENTION` a `system:alerts` (Redis pub/sub) → WebSocket →
+   dashboard. Esto es lo que un operador humano debe monitorear activamente.
+4. **Intervención manual:** el operador consulta `agent_interaction_logs` /
+   `validation_logs` / `sagas` (todas inmutables/auditables) para diagnosticar la causa
+   raíz antes de actuar directamente sobre los datos.
+
+### Diagnóstico técnico (por síntoma)
 
 ### Agente no aparece como HEALTHY
 
@@ -298,14 +409,18 @@ docker compose exec postgres psql -U etuser -d everywheretravel \
   -c "SELECT name, destination, base_price FROM packages;"
 ```
 
-### ANTHROPIC_API_KEY no configurada
+### Ollama no responde / agentes LLM fallan
 
 ```bash
-# Verificar que la variable está en .env
-cat .env | grep ANTHROPIC
+# Verificar que Ollama está corriendo en el host
+curl http://localhost:11434/api/tags
 
-# Si la variable está vacía, los agentes que usan LLM fallarán
-# El sistema sigue funcionando para operaciones sin LLM (reservas, liquidaciones)
+# Verificar que los contenedores lo alcanzan (usan host.docker.internal)
+docker compose exec sales_worker curl http://host.docker.internal:11434/api/tags
+
+# Si Ollama no responde, los agentes que usan LLM caen a su fallback determinístico
+# (sin LLM) — ver *_fallback_* en cada agents/<nombre>/agent.py.
+# El sistema sigue funcionando para operaciones sin LLM (reservas, liquidaciones).
 ```
 
 ---
@@ -314,7 +429,10 @@ cat .env | grep ANTHROPIC
 
 | Variable | Descripción | Valor por defecto |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | Clave API de Anthropic | (requerido) |
+| `LLM_PROVIDER` | Proveedor LLM activo (`ollama` o `anthropic`) | `ollama` |
+| `LLM_MODEL` | Modelo usado por los agentes | `ollama/qwen3:8b` |
+| `OLLAMA_DOCKER_BASE_URL` | URL de Ollama alcanzable desde los contenedores | `http://host.docker.internal:11434` |
+| `ANTHROPIC_API_KEY` | Clave API de Anthropic (solo si `LLM_PROVIDER=anthropic`) | (no requerido por defecto) |
 | `DATABASE_URL` | URL de PostgreSQL async | `postgresql+asyncpg://etuser:etpassword@postgres:5432/everywheretravel` |
 | `REDIS_URL` | URL de Redis con auth | `redis://:etredispass@redis:6379/0` |
 | `RABBITMQ_URL` | URL AMQP de RabbitMQ | `amqp://etrabbit:etrabbitpass@rabbitmq:5672/everywheretravel` |

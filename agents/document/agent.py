@@ -216,6 +216,7 @@ class DocumentAgent(BaseAgent):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    from core.logging_config import configure_logging
+    configure_logging("document-agent")
     agent = DocumentAgent()
     asyncio.run(agent.run())

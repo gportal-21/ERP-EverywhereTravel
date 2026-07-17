@@ -14,8 +14,12 @@ class Settings(BaseSettings):
     environment: str = "development"
     db_api_url: str = "http://localhost:8000"
 
-    llm_model: str = "openrouter/qwen/qwen3-8b"
-    openrouter_api_key: str = ""
+    llm_provider: str = "ollama"
+    llm_model: str = "ollama/qwen3:8b"
+    ollama_base_url: str = "http://localhost:11434"
+    embedding_model: str = "nomic-embed-text"
+
+    cors_origins: str = "http://localhost:3000,http://frontend:3000"
 
 
 settings = Settings()

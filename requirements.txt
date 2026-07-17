@@ -5,9 +5,10 @@ python-multipart==0.0.12
 websockets==13.1
 
 # Async PostgreSQL
+# Migraciones: NO se usa Alembic — el schema se aplica de forma idempotente en el
+# arranque vía api/database.py::ensure_schema_compatibility() + infrastructure/postgres/init.sql
 sqlalchemy[asyncio]==2.0.36
 asyncpg==0.30.0
-alembic==1.14.0
 psycopg2-binary==2.9.10
 
 # Redis
@@ -17,8 +18,13 @@ redis[hiredis]==5.2.1
 aio-pika==9.4.3
 
 # AI / Multiagente
-# anthropic para fallbacks directos cuando swarms no está disponible
+# Proveedor activo por defecto: Ollama local (LLM_PROVIDER=ollama), llamado directo
+# por HTTP desde agents/swarms_compat.py (sin pasar por swarms/litellm).
+# anthropic queda declarado como punto de extensión: si se configura
+# LLM_PROVIDER=anthropic + ANTHROPIC_API_KEY, swarms/litellm rutea a Claude en vez
+# de Ollama (agents/swarms_compat.py::Agent delega a swarms.Agent en ese caso).
 anthropic==0.40.0
+pgvector==0.3.6
 # swarms y sus deps (langchain, litellm) se instalan en capa separada del Dockerfile
 # con --no-deps para evitar que torch/transformers rompan el build (ver Dockerfile.api)
 

@@ -11,8 +11,11 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from pgvector.sqlalchemy import Vector
 
 from api.database import Base
+
+EMBEDDING_DIMENSIONS = 768
 
 
 def gen_uuid():
@@ -48,6 +51,35 @@ class Package(Base):
     includes = Column(JSON, default=[])
     excludes = Column(JSON, default=[])
     is_active = Column(Boolean, default=True)
+    embedding = Column(Vector(EMBEDDING_DIMENSIONS), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class DestinationKnowledge(Base):
+    """Fuente de conocimiento RAG para guías de destino (ver core/rag/content.py)."""
+    __tablename__ = "destination_knowledge"
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    destination = Column(String(255), nullable=False)
+    title = Column(String(255), nullable=False)
+    content = Column(Text, nullable=False)
+    embedding = Column(Vector(EMBEDDING_DIMENSIONS), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class AgentInteractionLog(Base):
+    """Traza local de cada llamada LLM de un agente — usada por el golden set
+    de evaluación (scripts/run_evaluation.py) como sustituto de LangSmith."""
+    __tablename__ = "agent_interaction_logs"
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    saga_id = Column(UUID(as_uuid=False), nullable=True)
+    agent_id = Column(String(100), nullable=False)
+    action = Column(String(255), nullable=False)
+    input_schema = Column(JSON, nullable=True)
+    output_schema = Column(JSON, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+    tokens_used = Column(Integer, nullable=True)
+    success = Column(Boolean, default=True)
+    error_message = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

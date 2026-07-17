@@ -126,6 +126,7 @@ class NotificationAgent(BaseAgent):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    from core.logging_config import configure_logging
+    configure_logging("notification-agent")
     agent = NotificationAgent()
     asyncio.run(agent.run())

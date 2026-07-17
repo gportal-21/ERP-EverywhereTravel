@@ -1,5 +1,14 @@
 # Arquitectura del Sistema Multiagente — Everywhere Travel
 
+> **Nota sobre notación:** los diagramas de esta sección usan **Mermaid** (sequenceDiagram,
+> stateDiagram, erDiagram, flowchart) porque renderizan directamente en GitHub/editores
+> Markdown. Adicionalmente existe un **diagrama BPMN 2.0 formal** del flujo principal
+> (Escenario A: cotización) en [`docs/bpmn/escenario_a_cotizacion.bpmn`](bpmn/escenario_a_cotizacion.bpmn)
+> — es XML estándar BPMN 2.0 con lanes por agente (API Gateway, Orchestrator, Sales,
+> Quotation, Validation), gateway exclusivo para el caso BLOCKING y eventos de fin
+> COMPLETED/FAILED. Se abre en [demo.bpmn.io](https://demo.bpmn.io), Camunda Modeler o
+> draw.io (importar BPMN), desde donde puede exportarse como imagen para el informe.
+
 ## 1. Diagrama de Componentes (Mermaid)
 
 ```mermaid
@@ -281,7 +290,130 @@ erDiagram
     liquidations ||--o{ transactions : "contains"
 ```
 
-## 7. Flujo de Mensajes MCP
+## 7. Orquestación: Saga + Event Bus vs. LangGraph
+
+Este sistema **no usa LangGraph**. La orquestación es un patrón Saga (`core/saga_coordinator.py`)
+sobre un event bus (RabbitMQ), con cada agente como proceso/contenedor independiente —
+justificación completa en [ADR-001](adr/ADR-001-saga-vs-langgraph.md).
+
+```mermaid
+flowchart TB
+    subgraph LangGraph["Modelo LangGraph (no usado)"]
+        LG_STATE["StateGraph en memoria\n(un solo proceso)"]
+        LG_NODE1["Nodo: Sales"] --> LG_STATE
+        LG_NODE2["Nodo: Quotation"] --> LG_STATE
+        LG_NODE3["Nodo: Validation"] --> LG_STATE
+        LG_CP["Checkpointer\n(requiere backend compartido)"]
+        LG_STATE -.->|"aristas condicionales\nen el grafo"| LG_CP
+    end
+
+    subgraph Saga["Modelo Saga + Event Bus (usado)"]
+        SA_ORCH["SagaCoordinator\n(Redis hot + Postgres cold)"]
+        SA_A["SalesAgent\n(contenedor propio)"] -->|MCPEnvelope| SA_BUS["RabbitMQ\ntopic exchange"]
+        SA_B["QuotationAgent\n(contenedor propio,\nescalable independiente)"] -->|MCPEnvelope| SA_BUS
+        SA_C["ValidationAgent\n(contenedor propio)"] -->|MCPEnvelope| SA_BUS
+        SA_BUS --> SA_ORCH
+        SA_MON["MonitoringAgent\ndetecta sagas estancadas\n(> 5 min)"] --> SA_ORCH
+    end
+```
+
+**Por qué el modelo de la derecha:** cada agente ya necesita ser un proceso independiente
+(Document Agent corre en 3 réplicas; cualquier agente puede caerse sin tumbar a los demás).
+LangGraph asume que el grafo vive en un solo proceso con un checkpointer compartido —
+forzar esa forma sobre 9 contenedores independientes habría significado reconstruir a mano
+el mismo event bus que RabbitMQ ya provee, sin ganar nada a cambio. El "checkpointing" de
+LangGraph se resuelve aquí con el log de pasos de la Saga en Redis + Postgres, que además
+sirve como auditoría permanente (`sagas.steps`), algo que un checkpointer de grafo no da
+gratis.
+
+## 7bis. Subsistema RAG
+
+`SalesAgent` e `ItineraryAgent` recuperan conocimiento por similaridad semántica en vez de
+match exacto de string — justificación completa en [ADR-009](adr/ADR-009-rag-pgvector.md).
+
+```mermaid
+flowchart LR
+    subgraph Fuentes["Fuentes de conocimiento"]
+        PKG["packages\n(catálogo turístico)"]
+        DK["destination_knowledge\n(core/rag/content.py,\nguías curadas de destino)"]
+    end
+
+    subgraph Indexacion["Indexación (scripts/build_rag_index.py)"]
+        EMB["Ollama /api/embeddings\nnomic-embed-text (768 dim)"]
+    end
+
+    PKG --> EMB
+    DK --> EMB
+    EMB -->|"embedding vector(768)"| PGV[("PostgreSQL + pgvector\nidx ivfflat cosine")]
+
+    subgraph Consumo
+        SALES["SalesAgent\n_tool_semantic_search_packages\n(fallback si búsqueda exacta falla)"]
+        ITIN["ItineraryAgent\n_tool_get_destination_info\n(RAG primero, dict estático como fallback)"]
+    end
+
+    SALES -->|"GET /packages/semantic-search"| PGV
+    ITIN -->|"GET /knowledge/destinations/search"| PGV
+```
+
+Flujo de recuperación: la consulta del cliente (destino + preferencias) se embebe con el
+mismo modelo, y `ORDER BY embedding <=> :query_embedding LIMIT k` (operador de distancia
+de coseno de pgvector) devuelve los `k` resultados más cercanos. Si Ollama no está
+disponible, el endpoint responde `503` y el agente cae a su fallback determinístico
+existente (mismo patrón de resiliencia usado en el resto del sistema).
+
+## 7ter. Salida estructurada (constrained decoding)
+
+Ver [ADR-010](adr/ADR-010-salida-estructurada-forzada.md). Cada agente con LLM define su
+contrato de salida como modelo Pydantic; `.model_json_schema()` se pasa como
+`response_schema` al `Agent` de `agents/swarms_compat.py`, que lo reenvía a Ollama como
+`format` — el modelo queda restringido a emitir JSON conforme al schema durante el
+decoding, no solo "instruido" a hacerlo por prompt. `core/structured_output.py::parse_structured_output()`
+valida el resultado contra el mismo modelo Pydantic como segunda capa, con extracción
+manual de bloques JSON como red de seguridad final antes de caer al fallback determinístico.
+
+## 7quater. Human-in-the-loop (HITL)
+
+El punto de entrada de HITL es la evaluación de conflictos del Orchestrator
+(`agents/orchestrator/agent.py::_handle_conflict`, Fase 3). No es un simple "avisar a
+alguien" — es un _gate_ de decisión basado en confianza medida, no en intuición:
+
+```mermaid
+flowchart TD
+    CONF["ConflictNotification\n(ej. dos agentes reportan estado distinto\npara la misma entidad)"]
+    CONF --> VAL["conflict-validation-agent\n¿es un problema de integridad?\nconfidence: 0.0-1.0"]
+    CONF --> MON["conflict-monitoring-agent\n¿impacto operativo?\nneeds_escalation: bool"]
+
+    VAL --> CHECK{"confidence < 0.7\nO needs_escalation=true?"}
+    MON --> CHECK
+
+    CHECK -->|"No"| AUTO["Resolución automática\n(ConflictResolved, needs_escalation=false)"]
+    CHECK -->|"Sí"| ESC["MonitoringAgent._handle_conflict_resolved()\n→ _escalate_to_human()"]
+    ESC --> ALERT["Redis pub/sub: system:alerts\ntype=REQUIRES_MANUAL_INTERVENTION"]
+    ALERT --> WS["WebSocket → Dashboard\n(operador humano revisa)"]
+```
+
+**Por qué 0.7 como umbral:** es el valor que ya prometía
+`agents/orchestrator/prompts/system_prompt.txt` ("Escalate to human review when
+confidence < 0.7") — antes de esta iteración esa era una instrucción de prompt sin
+ningún cálculo real detrás (el LLM no tenía forma de que su "confidence" llegara a
+ningún lado). Ahora `ConflictValidationOutput.confidence` es un campo forzado por JSON
+Schema (ver [ADR-010](adr/ADR-010-salida-estructurada-forzada.md)), así que el umbral
+opera sobre un número real, no sobre una promesa de prompt.
+
+**Otros dos puntos de escalación humana** (no pasan por confidence, son deterministas):
+`MonitoringAgent._requeue_message()` tras 3 reintentos fallidos de un mensaje
+dead-letter, y `_handle_doc_failure()` tras 3 fallos consecutivos de generación de
+documento — ambos comparten el mismo `_escalate_to_human()`.
+
+**Limitación conocida:** la escalación es de _notificación_ (el operador se entera vía
+WebSocket/alerta), no de _aprobación bloqueante_ — no hay un endpoint `POST
+/approve` que pause la Saga hasta que un humano actúe explícitamente. La Saga queda en
+`REQUIRES_MANUAL` (ver diagrama de estado de Saga en la sección 5) esperando
+intervención manual directa sobre los datos, no un "reanudar" programático. Formalizar
+un endpoint de aprobación/rechazo es la extensión natural si el proceso de negocio lo
+exige.
+
+## 8. Flujo de Mensajes MCP
 
 ```mermaid
 flowchart LR
@@ -301,7 +433,7 @@ flowchart LR
     V4 -->|FAIL| DLQ["Dead-Letter Queue"]
 ```
 
-## 8. Shared State Architecture
+## 9. Shared State Architecture
 
 ```
 Redis Key Space:

@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(ollama pull qwen3:8b)",
+      "PowerShell(& \"C:\\\\Users\\\\gerso\\\\AppData\\\\Local\\\\Programs\\\\Ollama\\\\ollama.exe\" pull qwen3:8b)",
+      "PowerShell(& \"C:\\\\Users\\\\gerso\\\\AppData\\\\Local\\\\Programs\\\\Ollama\\\\ollama.exe\" list)",
+      "PowerShell(& \"C:\\\\Users\\\\gerso\\\\AppData\\\\Local\\\\Programs\\\\Ollama\\\\ollama.exe\" run qwen3:8b \"/no_think Responde solo con 'OK' si puedes leer esto.\" --nowordwrap 2>&1)",
+      "PowerShell(curl -s http://localhost:11434/api/tags)",
+      "PowerShell(docker compose down 2>&1)",
+      "PowerShell(docker compose up -d --build 2>&1)",
+      "PowerShell(docker compose ps --format \"table {{.Name}}\\\\t{{.Status}}\\\\t{{.Ports}}\" 2>&1)",
+      "PowerShell(docker exec et_postgres psql -U etuser -d everywheretravel -c \"SELECT username, role FROM users;\" 2>&1)",
+      "PowerShell(docker exec et_postgres psql -U etuser -d everywheretravel -c \"SELECT username, hashed_password FROM users WHERE username='admin';\" 2>&1)",
+      "PowerShell(docker exec et_api python -c \"import bcrypt; print\\(bcrypt.checkpw\\(b'admin1234', b'\\\\$2b\\\\$12\\\\$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW'\\)\\)\" 2>&1)",
+      "PowerShell(docker exec et_api python -c \"import bcrypt; h=b'`$2b`$12`$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW'; print\\(bcrypt.checkpw\\(b'admin1234', h\\)\\)\")",
+      "PowerShell(docker exec et_api python -c \"import bcrypt; h=bcrypt.hashpw\\(b'admin1234', bcrypt.gensalt\\(\\)\\).decode\\(\\); print\\(h\\)\")",
+      "PowerShell(docker exec et_postgres psql -U etuser -d everywheretravel -c \"UPDATE users SET hashed_password = '\\\\$2b\\\\$12\\\\$MrKcUl7AQU61s8DLSMfebeZXmXLNBQm3VllUfLHdFnUM8s6xxlLAu' WHERE username = 'admin';\" 2>&1)",
+      "PowerShell(docker compose up -d --build api orchestrator sales_worker quotation_worker validation_worker itinerary_worker document_worker 2>&1)",
+      "PowerShell(docker exec et_orchestrator python -c \"import swarms\" 2>&1)",
+      "PowerShell(docker exec et_orchestrator pip install --no-cache-dir docstring_parser 2>&1)",
+      "PowerShell(docker exec et_orchestrator python -c \"from agents.swarms_compat import Agent, SWARMS_AVAILABLE; print\\(f'SWARMS_AVAILABLE={SWARMS_AVAILABLE}'\\)\" 2>&1)",
+      "Bash(pandoc --version)",
+      "Bash(./.venv/Scripts/python.exe -c \"import docx; print\\('python-docx', docx.__version__\\)\")",
+      "Bash(mmdc --version)",
+      "Bash(soffice --version)",
+      "Bash(./.venv/Scripts/python.exe -m pip install python-docx --quiet)",
+      "Bash(./.venv/Scripts/python.exe -c \"import docx; print\\('python-docx OK', docx.__version__\\)\")",
+      "Bash(./.venv/Scripts/python.exe scripts/build_report.py)",
+      "Bash(PYTHONPATH=. ./.venv/Scripts/python.exe scripts/run_evaluation.py)",
+      "WebSearch",
+      "Bash(grep -n 'US\\\\$\\\\|\\\\$\\\\| US\\\\| dólar\\\\|dolar' scripts/build_report.py docs/roi.md)",
+      "Bash(grep -n 'US\\\\$' scripts/build_report.py)",
+      "Bash(grep -n 'US\\\\$\\\\|US\\\\$\\\\| \\\\$\\\\|dólar\\\\|Costos del proyecto' docs/roi.md)",
+      "Bash(grep -n 'US\\\\$' docs/roi.md)",
+      "Bash(grep -E '~\\\\$|\\\\.tmp$|test-results|\\\\.env$|\\\\.env\\\\.production$|\\\\.venv/')"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\gerso\\Documents\\GERSON\\UPAO\\7-CICLO\\AUTOMATIZACION\\sistema-everywheretravel\\frontend"
+    ]
+  }
+}
